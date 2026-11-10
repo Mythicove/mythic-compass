@@ -42,7 +42,13 @@ pub fn run() {
         // 而复制文件需要真实的文件系统路径。
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
-            let paths = Paths::new(app.path().app_data_dir()?);
+            // 便携模式（exe 旁边有 portable.txt）优先，否则用平台的用户数据目录。
+            let root = std::env::current_exe()
+                .ok()
+                .map(|exe| exe.with_file_name(paths::PORTABLE_MARKER))
+                .and_then(|marker| paths::portable_root(&marker))
+                .map_or_else(|| app.path().app_data_dir(), Ok)?;
+            let paths = Paths::new(root);
             paths.ensure().map_err(|e| e.to_string())?;
             let (account, account_warning) = account::load(&paths);
 

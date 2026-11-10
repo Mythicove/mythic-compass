@@ -11,6 +11,24 @@ use serde::Serialize;
 
 use crate::error::Error;
 
+/// 便携模式的标记文件名：放在可执行文件旁边，内容不重要（空文件即可）。
+pub const PORTABLE_MARKER: &str = "portable.txt";
+
+/// 便携模式的数据根目录：标记文件存在时是它旁边的 `data/`，否则 `None`。
+///
+/// 用途是把整个启动器放进 U 盘或云同步目录里带着走。判断只看那个标记文件在不在，
+/// **不看 exe 装在哪**：装在 Program Files 里也能开便携模式（虽然那样多半写不进去，
+/// 而写入失败会明确报错，不该由这里预先替用户决定）。
+///
+/// 用标记文件而不是命令行参数，是因为"便携"是一个**部署属性**而不是每次启动的选择：
+/// 双击图标、文件关联、开机自启这些入口都不会带参数，靠参数判断就会时灵时不灵。
+pub fn portable_root(marker: &Path) -> Option<PathBuf> {
+    if !marker.is_file() {
+        return None;
+    }
+    Some(marker.parent()?.join("data"))
+}
+
 /// 把来自外部数据（版本 JSON、资源索引）的相对路径安全地拼到 root 下。
 /// 空串、绝对路径与任何 `..` 都拒绝：远端 JSON 不该有能力把文件写到数据目录之外。
 pub fn safe_join(root: &Path, rel: &str) -> Result<PathBuf, Error> {
