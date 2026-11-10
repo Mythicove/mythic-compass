@@ -1,0 +1,59 @@
+@layer theme, base, components, utilities;
+@import "./minecraft-text-assets.css";
+
+@layer components {
+  .mc-input {
+    --mc-pixel: calc(1px * var(--mc-scale, 2));
+    display: inline-block;
+    box-sizing: border-box;
+    width: calc(200 * var(--mc-pixel));
+    height: calc(20 * var(--mc-pixel));
+    min-width: calc(9 * var(--mc-pixel));
+    border: 0;
+    border-radius: 0;
+    outline: none;
+    padding: 0 calc(4 * var(--mc-pixel));
+    background-color: #000;
+    background-image: var(--mc-input-image);
+    background-size: 100% 100%;
+    background-repeat: no-repeat;
+    image-rendering: pixelated;
+    font-family: "Minecraft Bitmap", monospace;
+    font-size: calc(8 * var(--mc-pixel));
+    font-weight: 400;
+    font-kerning: none;
+    letter-spacing: 0;
+    line-height: calc(8 * var(--mc-pixel));
+    color: #e0e0e0;
+    caret-color: #e0e0e0;
+    cursor: text;
+    opacity: 1;
+  }
+  .mc-input:disabled,
+  .mc-input:read-only {
+    color: #707070;
+    caret-color: #707070;
+  }
+  .mc-input:disabled {
+    cursor: not-allowed;
+  }
+  .mc-input[data-mc-bitmap="true"] {
+    font-family: "Minecraft Bitmap", "Minecraft Unihex Metrics", monospace;
+    color: transparent;
+    caret-color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .mc-input[data-mc-bitmap="true"]::placeholder {
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .mc-input[data-mc-bitmap="true"]::selection {
+    background: transparent;
+    color: transparent;
+    -webkit-text-fill-color: transparent;
+  }
+  .mc-input::placeholder {
+    opacity: 1;
+    color: #555;
+  }
+}

@@ -1,0 +1,58 @@
+@layer theme, base, components, utilities;
+
+@layer components {
+  .mc-unicode-label {
+    display: inline-block;
+    height: calc(8 * var(--mc-pixel));
+    position: relative;
+    text-shadow: none;
+    width: var(--mc-unicode-width);
+  }
+  .mc-unicode-label-canvas {
+    height: calc(9 * var(--mc-pixel));
+    left: 0;
+    pointer-events: none;
+    position: absolute;
+    top: 0;
+    visibility: hidden;
+    width: 100%;
+  }
+  .mc-unicode-label[data-mc-label-ready="true"] > .mc-unicode-label-canvas {
+    visibility: visible;
+  }
+  .mc-menu-unicode {
+    display: block;
+    height: var(--mc-menu-unicode-height);
+    position: relative;
+    width: var(--mc-menu-unicode-width);
+  }
+  .mc-popover-unicode {
+    display: block;
+    height: var(--mc-popover-unicode-height);
+    position: relative;
+    width: var(--mc-popover-unicode-width);
+  }
+  .mc-menu-unicode-canvas,
+  .mc-popover-unicode-canvas {
+    height: 100%;
+    left: 0;
+    position: absolute;
+    top: 0;
+    visibility: hidden;
+    width: 100%;
+  }
+  .mc-menu-unicode-canvas[data-mc-menu-unicode-ready="true"],
+  .mc-popover-unicode-canvas[data-mc-popover-unicode-ready="true"] {
+    visibility: visible;
+  }
+  .mc-menu-unicode-fallback,
+  .mc-popover-unicode-fallback {
+    visibility: visible;
+  }
+  .mc-menu-unicode-canvas[data-mc-menu-unicode-ready="true"]
+    + .mc-menu-unicode-fallback,
+  .mc-popover-unicode-canvas[data-mc-popover-unicode-ready="true"]
+    + .mc-popover-unicode-fallback {
+    visibility: hidden;
+  }
+}

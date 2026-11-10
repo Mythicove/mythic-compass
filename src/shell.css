@@ -1,0 +1,3 @@
+/* Existing pages stay in a lower CSS layer while the registry components own
+   their native artwork and interaction styles. No competing global overrides. */
+@import "./App.css" layer(legacy);

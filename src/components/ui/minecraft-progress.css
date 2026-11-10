@@ -1,0 +1,58 @@
+@layer components {
+  .mc-progress {
+    --mc-pixel: calc(1px * var(--mc-scale, 2));
+    position: relative;
+    width: calc(182 * var(--mc-pixel));
+    height: calc(5 * var(--mc-pixel));
+    flex-shrink: 0;
+    overflow: hidden;
+    image-rendering: pixelated;
+  }
+  .mc-progress-surface {
+    background-image: var(--mc-progress-image);
+    position: absolute;
+    display: block;
+    inset: 0;
+    background-position: 0 0;
+    background-size: calc(182 * var(--mc-pixel)) calc(5 * var(--mc-pixel));
+    background-repeat: no-repeat;
+    pointer-events: none;
+  }
+  .mc-progress-indicator:not([data-indeterminate]) {
+    inset-inline-start: 0;
+  }
+  .mc-progress-indicator {
+    position: absolute;
+    top: 0;
+    left: 0;
+    height: 100%;
+    overflow: hidden;
+    pointer-events: none;
+  }
+  .mc-progress-fallback {
+    position: absolute;
+    inset: 0;
+  }
+  .mc-progress-paint {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    image-rendering: pixelated;
+    pointer-events: none;
+    visibility: hidden;
+  }
+  .mc-progress-paint[data-mc-progress-painted="true"] {
+    visibility: visible;
+  }
+  .mc-progress-paint[data-mc-progress-painted="true"] ~ .mc-progress-fallback {
+    visibility: hidden;
+  }
+}
+
+@layer components {
+  .mc-owned-paint-progress-1 {
+    height: 100%;
+    width: var(--mc-z-progress-paint-1-width);
+  }
+}

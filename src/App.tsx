@@ -10,12 +10,12 @@ import {
   type GameExit,
   type LogLine,
 } from "./lib/ipc";
-import { HomeView } from "./views/home";
+import { StartView } from "./views/start";
 import { InstancesView } from "./views/instances";
 import { ContentView } from "./views/content";
 import { SettingsView } from "./views/settings";
 import { LogsView } from "./views/logs";
-import "./App.css";
+import "./shell.css";
 
 type View = "home" | "instances" | "content" | "logs" | "settings";
 
@@ -214,7 +214,7 @@ function Shell() {
           </p>
         )}
         {view === "home" && (
-          <HomeView account={account} checking={checking} onSignIn={signIn} />
+          <StartView account={account} checking={checking} onSignIn={signIn} />
         )}
         {view === "instances" && (
           <InstancesView

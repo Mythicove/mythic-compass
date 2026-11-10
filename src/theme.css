@@ -1,0 +1,13 @@
+@layer theme, base, legacy, components, utilities;
+@import "tailwindcss";
+
+@theme inline {
+  --color-background: var(--bg);
+  --color-foreground: var(--text);
+  --color-primary: var(--primary);
+  --color-primary-foreground: white;
+  --color-muted: var(--surface);
+  --color-muted-foreground: var(--text-muted);
+  --color-border: var(--border);
+  --color-ring: var(--highlight);
+}
