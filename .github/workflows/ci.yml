@@ -236,13 +236,70 @@ jobs:
             echo "tag=dev-${{ github.run_number }}" >> "$GITHUB_OUTPUT"
           fi
 
+      # 用 CLI --config 同时配置 bundler 和运行时；配置只含公钥。
+      - name: configure signed updates
+        id: updater
+        shell: bash
+        env:
+          UPDATER_PUBKEY: ${{ secrets.TAURI_SIGNING_PUBLIC_KEY }}
+          UPDATER_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if [ -z "$UPDATER_PUBKEY" ] && [ -z "$UPDATER_PRIVATE_KEY" ]; then
+            echo "No updater keys: building without automatic updates."
+            exit 0
+          fi
+          if [ -z "$UPDATER_PUBKEY" ] || [ -z "$UPDATER_PRIVATE_KEY" ]; then
+            echo "::error::Set both TAURI_SIGNING_PUBLIC_KEY and TAURI_SIGNING_PRIVATE_KEY to enable signed updates."
+            exit 1
+          fi
+          node -e 'require("node:fs").writeFileSync(require("node:path").join(process.env.RUNNER_TEMP,"compass-updater.json"),JSON.stringify({bundle:{createUpdaterArtifacts:true},plugins:{updater:{endpoints:["https://github.com/"+process.env.GITHUB_REPOSITORY+"/releases/latest/download/latest.json"],pubkey:process.env.UPDATER_PUBKEY}}}))'
+          echo "args=--config \"$RUNNER_TEMP/compass-updater.json\"" >> "$GITHUB_OUTPUT"
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # 自动更新的签名密钥。**仓库里的 tauri.conf.json 故意不带 plugins.updater 段**：
+          # 那需要一个 minisign 公钥，而配对的私钥必须由发布方自己生成并只放进 CI 密钥
+          # （`pnpm tauri signer generate`）。构建过程自己造一对是不行的——私钥一旦进了
+          # 仓库或构建日志，更新链就等于没有签名。
+          # 没有这两个密钥时，产物照样能出，只是不带自动更新，而 UI 会照实说明
+          # （settings 页的 update_configured 走的就是这条判断）。
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          # macOS 签名与公证需要配齐相应 secrets；部分配置可能导致签名或公证失败。
+          # 未签名包在 macOS 上要"右键打开"，这件事写在安装文档里，不靠用户自己撞。
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ steps.tagname.outputs.tag }}
           releaseName: "Mythic Compass __VERSION__"
-          releaseBody: "由 CI 产出的三平台安装包（Windows 未签名，见安装文档）。"
+          releaseBody: "由 CI 构建的三平台安装包。Windows 未签名，见安装文档的 SmartScreen 说明。"
           releaseDraft: true
           prerelease: false
-          args: ${{ matrix.args }}
+          # tauri-action 在检测到签名私钥时会一并产出 latest.json 与各产物的 .sig，
+          # 更新器的 endpoints 就指向这个 release 里的 latest.json
+          args: ${{ matrix.args }} ${{ steps.updater.outputs.args }}
+
+
+  checksums:
+    name: release asset checksums
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: hash all uploaded platform assets
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.event_name == 'create' && github.event.ref || format('dev-{0}', github.run_number) }}
+        run: |
+          mkdir "$RUNNER_TEMP/compass-release-assets"
+          gh release download "$TAG" --dir "$RUNNER_TEMP/compass-release-assets"
+          cd "$RUNNER_TEMP/compass-release-assets"
+          find . -maxdepth 1 -type f ! -name SHA256SUMS.txt -print0 | sort -z | xargs -0 -r sha256sum > SHA256SUMS.txt
+          test -s SHA256SUMS.txt
+          gh release upload "$TAG" SHA256SUMS.txt --clobber
