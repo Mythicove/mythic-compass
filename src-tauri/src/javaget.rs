@@ -671,12 +671,15 @@ mod tests {
         use std::os::unix::fs::PermissionsExt;
         let dir = tempfile::tempdir().unwrap();
         std::fs::create_dir_all(dir.path().join("bin")).unwrap();
-        std::fs::write(dir.path().join("bin/java"), b"").unwrap();
+        std::fs::write(dir.path().join("bin/java.exe"), b"").unwrap();
         std::fs::write(dir.path().join("release"), b"").unwrap();
 
-        mark_executable(dir.path(), &["bin/java".to_string(), "release".to_string()]).unwrap();
+        let manifest: Manifest =
+            serde_json::from_str(&fixture("java-runtime-manifest-trimmed.json")).unwrap();
+        let (_, executables) = plan(&manifest, dir.path()).unwrap();
+        mark_executable(dir.path(), &executables).unwrap();
 
-        let mode = std::fs::metadata(dir.path().join("bin/java"))
+        let mode = std::fs::metadata(dir.path().join("bin/java.exe"))
             .unwrap()
             .permissions()
             .mode();
