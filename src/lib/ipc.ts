@@ -255,6 +255,12 @@ export interface ServerJoin {
   port: number | null;
 }
 
+export interface ServerCompatibility {
+  reachable: boolean;
+  version: string | null;
+  protocolVersions: string[];
+}
+
 /** 设置面板能改的字段。启动计数与最近启动时间由 Rust 侧维护，不在这里回传。 */
 export interface InstanceSettings {
   name: string;
@@ -670,6 +676,7 @@ export const ipc = {
     invoke<ModpackExport>("modpack_export", { slug, dest, packVersion }),
   /** 这个实例会用哪个 Java；null = 没找到（此时启动会失败，UI 要提前说清楚） */
   instanceJava: (slug: string) => invoke<JavaRuntime | null>("instance_java", { slug }),
+  instanceServerStatus: (slug: string) => invoke<ServerCompatibility | null>("instance_server_status", { slug }),
 
   /** 这个构建有没有配好自动更新（`plugins.updater.pubkey` 非空）。   *  false 是**正常状态**而不是错误：签名私钥必须由发布方自己生成并放进 CI 密钥，
    *  仓库里的配置不带 updater 段。UI 据此说明"这个构建没有自动更新"，

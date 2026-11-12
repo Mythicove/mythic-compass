@@ -142,6 +142,7 @@ pub fn run() {
             commands::modpack_install,
             commands::modpack_export,
             commands::instance_java,
+            commands::instance_server_status,
             commands::content_list,
             commands::content_set_enabled,
             commands::content_import,

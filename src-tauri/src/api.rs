@@ -33,6 +33,64 @@ impl ApiClient {
         Self { http }
     }
 
+    /// Resolve the configured join destination against the public community directory.
+    /// Ambiguous or unlisted destinations carry no inferred compatibility claim.
+    pub async fn community_server_status(
+        &self,
+        base: &str,
+        host: &str,
+        port: u16,
+    ) -> Result<Option<ServerCompatibility>, Error> {
+        #[derive(Deserialize)]
+        struct PublicServer {
+            id: String,
+            address: String,
+            edition: String,
+        }
+        let servers: Vec<PublicServer> = self
+            .http
+            .get(join_path(base, &["api", "isles", "servers"])?)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        let mut matches = servers.iter().filter(|server| {
+            if server.edition != "java" {
+                return false;
+            }
+            let Ok(address) = reqwest::Url::parse(&format!("minecraft://{}", server.address))
+            else {
+                return false;
+            };
+            address.host_str().is_some_and(|value| {
+                value
+                    .trim_matches(['[', ']'])
+                    .eq_ignore_ascii_case(host.trim_matches(['[', ']']))
+            }) && address.port().unwrap_or(25565) == port
+        });
+        let Some(server) = matches.next() else {
+            return Ok(None);
+        };
+        if matches.next().is_some() {
+            return Ok(None);
+        }
+        let status = self
+            .http
+            .get(join_path(
+                base,
+                &["api", "isles", "servers", &server.id, "status"],
+            )?)
+            .timeout(std::time::Duration::from_secs(5))
+            .send()
+            .await?
+            .error_for_status()?
+            .json()
+            .await?;
+        Ok(Some(status))
+    }
+
     // ---- Mirror / Yggdrasil ----
 
     /// 启动器登录：**玩家名 + 该玩家的独立密码**（ADR-0012）。
@@ -262,6 +320,15 @@ impl ApiClient {
         }
         Ok(text)
     }
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ServerCompatibility {
+    pub reachable: bool,
+    pub version: Option<String>,
+    #[serde(default)]
+    pub protocol_versions: Vec<String>,
 }
 
 /// 把动态值按 URL 路径段百分号编码后拼进地址。name/project_id 来自 UI 与后端数据，

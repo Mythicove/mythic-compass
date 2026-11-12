@@ -3,7 +3,7 @@ import { listen } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import { useConfig } from "../App";
 import { useI18n, errorKey } from "../i18n";
-import { ipc, EVENTS, toIpcError, type Instance, type AccountView, type FileProgress } from "../lib/ipc";
+import { ipc, EVENTS, toIpcError, type Instance, type AccountView, type FileProgress, type ServerCompatibility } from "../lib/ipc";
 import { SkinPreview } from "../components/skin-preview";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
@@ -33,6 +33,7 @@ export function StartView({ account, checking, onSignIn }: Props) {
   const [password, setPassword] = useState("");
   const [signingIn, setSigningIn] = useState(false);
   const [sound, setSound] = useState(() => getMinecraftSoundVolume() > 0);
+  const [compatibility, setCompatibility] = useState<{ slug: string; site: string; status: ServerCompatibility | null } | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -53,6 +54,20 @@ export function StartView({ account, checking, onSignIn }: Props) {
   }, [account, config?.apiUrl]);
 
   const current = instances?.find((i) => i.slug === selected);
+  useEffect(() => {
+    if (!selected || !config?.apiUrl) return;
+    const site = config.apiUrl;
+    let active = true;
+    const load = () => {
+      void ipc.instanceServerStatus(selected)
+        .then((status) => { if (active) setCompatibility({ slug: selected, site, status }); })
+        .catch(() => { if (active) setCompatibility({ slug: selected, site, status: null }); });
+    };
+    load();
+    const timer = setInterval(load, 30_000);
+    return () => { active = false; clearInterval(timer); };
+  }, [selected, config?.apiUrl]);
+  const serverHint = compatibility?.slug === selected && compatibility.site === config?.apiUrl ? compatibility : null;
   const launch = async () => {
     if (!current || busy || !account || running) return;
     setBusy(true); setError(""); setProgress(null);
@@ -80,6 +95,14 @@ export function StartView({ account, checking, onSignIn }: Props) {
         <div className="start-play-content"><p className="start-kicker">Minecraft: Java Edition</p><h2 id="start-instance-title">{current?.name ?? text.selectInstance}</h2><p className="start-version">{current?.versionId ?? "—"}</p>
           <label className="start-field"><span>{text.instance}</span><select className="start-select" value={selected} disabled={!instances?.length || busy} onChange={(e) => setSelected(e.target.value)}><option value="" disabled>{text.selectInstance}</option>{instances?.map((i) => <option key={i.slug} value={i.slug}>{i.name}</option>)}</select></label>
           {instances === null ? <p role="status">{text.loading}</p> : instances.length === 0 ? <p className="start-hint">{t("home.noInstances")}</p> : null}
+          {current?.server && <div className="start-hint" role="status">
+            <p>{text.clientVersion}: {current.loader?.gameVersion ?? current.versionId} · {current.server.host}:{current.server.port ?? 25565}</p>
+            {!serverHint ? <p>{config?.apiUrl ? text.checkingCompatibility : text.compatibilityUnknown}</p> : serverHint.status ? <>
+              <p>{serverHint.status.reachable ? text.serverVersion : text.serverUnreachable}: {serverHint.status.version ?? "—"}</p>
+              {!!serverHint.status.protocolVersions.length && <p>{text.allowedProtocols}: {serverHint.status.protocolVersions.join(", ")}</p>}
+              <p>{text.compatibilityHint}</p>
+            </> : <p>{text.compatibilityUnknown}</p>}
+          </div>}
           <div className="start-main-action"><Button style={{ width: "100%", maxWidth: "400px" }} disabled={!current || !account || !!running || busy || checking} onClick={() => void launch()}>{busy ? text.starting : running ? text.running : text.launch}</Button></div>
           {running && <div className="start-running"><p role="status">{text.running}: {instances?.find((i) => i.slug === running)?.name ?? running}</p><Button scale={1} style={{ width: "180px" }} disabled={busy} onClick={() => void stop()}>{text.stop}</Button></div>}
           {!account && !checking && <p className="start-hint">{text.loginFirst}</p>}

@@ -13,7 +13,7 @@ use tokio::sync::Notify;
 use crate::account::{self, Account, AccountView, AccountsView, AuthCheckView, now_unix};
 use crate::api::{
     ApiClient, CredentialView, File as HoardFile, PlayerCredential, Project, SearchResponse,
-    Version, png_data_url,
+    ServerCompatibility, Version, png_data_url,
 };
 use crate::archive::ZipSummary;
 use crate::cli::{self, Intent};
@@ -46,6 +46,25 @@ pub const COPY_EVENT: &str = "compass://copy-progress";
 #[tauri::command]
 pub async fn get_config(state: State<'_, Arc<AppState>>) -> Result<Config, Error> {
     Ok(state.config.read().await.clone())
+}
+
+#[tauri::command]
+pub async fn instance_server_status(
+    state: State<'_, Arc<AppState>>,
+    slug: String,
+) -> Result<Option<ServerCompatibility>, Error> {
+    let inst = instance::load(&state.paths, &slug)?;
+    let base = state.config.read().await.api_url.clone();
+    let Some(server) = inst.server else {
+        return Ok(None);
+    };
+    if base.is_empty() {
+        return Ok(None);
+    }
+    state
+        .api
+        .community_server_status(&base, &server.host, server.port.unwrap_or(25565))
+        .await
 }
 
 /// 保存全局设置。落盘成功后才更新内存态：写失败时 UI 不至于显示一个没生效的配置。

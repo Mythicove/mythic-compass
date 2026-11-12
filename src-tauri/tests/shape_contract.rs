@@ -63,7 +63,7 @@ const ALIASES: [(&str, &str); 7] = [
 ];
 
 /// 必须被比对到的形状。少了这条，某次重命名会让一个载荷悄悄从门里消失。
-const MUST_COMPARE: [&str; 46] = [
+const MUST_COMPARE: [&str; 47] = [
     "AccountEntry",
     "AccountsView",
     "AccountView",
@@ -108,6 +108,7 @@ const MUST_COMPARE: [&str; 46] = [
     "Resolution",
     "SecretStoreInfo",
     "ServerJoin",
+    "ServerCompatibility",
     "Summary",
     "ZipSummary",
 ];
