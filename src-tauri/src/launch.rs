@@ -81,7 +81,11 @@ pub fn classpath_separator(os: &OsInfo) -> &'static str {
 /// 内存与 GC 参数。G1 那组低停顿参数是官方启动器/HMCL 的通行做法，
 /// Java 8u40+ 也支持（需要 UnlockExperimentalVMOptions）。
 pub fn memory_args(memory_mb: u32) -> Vec<String> {
-    let mut args = vec![format!("-Xmx{memory_mb}M"), "-Xms256M".to_string()];
+    // -Xms 必须被 -Xmx 夹住：写死 256M 的话，用户把内存调到 256MB 以下时
+    // JVM 根本不启动，而它报的是 "Initial heap size set to a larger value than
+    // the maximum heap size"——一句看不出根因在启动器这边的话。
+    let initial_mb = 256.min(memory_mb);
+    let mut args = vec![format!("-Xmx{memory_mb}M"), format!("-Xms{initial_mb}M")];
     args.extend(
         [
             "-XX:+UnlockExperimentalVMOptions",
@@ -96,21 +100,26 @@ pub fn memory_args(memory_mb: u32) -> Vec<String> {
     args
 }
 
-/// Windows 上优先用 `javaw.exe`：我们已经用管道接管了 stdout/stderr，
-/// 用 `java.exe` 只会多出一个黑色控制台窗口。
+/// Windows 上一律用 `java.exe`，拿到 `javaw.exe` 也要换回来。
+///
+/// 换 javaw 的理由本来是"不弹黑色控制台窗口"，但那个窗口已经由 `spawn` 里的
+/// `CREATE_NO_WINDOW` 挡住了，于是 javaw 只剩下缺点：**JVM 在启动阶段失败时**
+/// （类版本不对、不认识的参数、堆配置非法）javaw 弹的是一个消息框，既不写 stderr
+/// 也不退出。实测 JDK 8 的 javaw 跑一个 Java 21 编译的类：两个流都是 0 字节，
+/// 15 秒后进程还在；同样条件下 `java.exe` 立刻以退出码 1 结束，并在 stderr 给出完整的
+/// `UnsupportedClassVersionError: ... class file version 65.0 ... only recognizes up to 52.0`。
+///
+/// 也就是说 javaw 会把"Java 版本不对"这个最常见的原因，变成启动器眼里一次
+/// **没有输出、没有退出码的静默挂起**——比崩溃更难查，因为连"退出码 1"都没有。
 pub fn windows_java(program: &Path) -> PathBuf {
     if !cfg!(windows) {
         return program.to_path_buf();
     }
-    if program.file_name().and_then(|n| n.to_str()) == Some("javaw.exe") {
-        return program.to_path_buf();
+    let console = program.with_file_name("java.exe");
+    if console.is_file() {
+        return console;
     }
-    let javaw = program.with_file_name("javaw.exe");
-    if javaw.is_file() {
-        javaw
-    } else {
-        program.to_path_buf()
-    }
+    program.to_path_buf()
 }
 
 fn substitutions(v: &VersionJson, os: &OsInfo, opts: &LaunchOptions) -> HashMap<String, String> {
@@ -572,6 +581,39 @@ mod tests {
         assert!(!args.iter().any(|a| a.contains("${")), "{args:?}");
     }
 
+    /// `-Xms` 必须被 `-Xmx` 夹住。
+    ///
+    /// 写死 `-Xms256M` 的话，用户把内存调到 256MB 以下时 JVM **根本不启动**，报的是
+    /// `Error occurred during initialization of VM` /
+    /// `Initial heap size set to a larger value than the maximum heap size`——
+    /// 一句完全看不出"是启动器把初始堆写死了"的话，用户只看到"游戏打不开"。
+    /// 这条是真跑出来的：造崩溃场景时把内存设成 64MB 就撞上了。
+    #[test]
+    fn initial_heap_never_exceeds_the_maximum() {
+        for mb in [64u32, 128, 255, 256, 257, 1024, 4096] {
+            let args = memory_args(mb);
+            let grab = |prefix: &str| -> u32 {
+                args.iter()
+                    .find(|a| a.starts_with(prefix))
+                    .and_then(|a| {
+                        a.trim_start_matches(prefix)
+                            .trim_end_matches('M')
+                            .parse()
+                            .ok()
+                    })
+                    .unwrap_or_else(|| panic!("{prefix} missing for {mb}MB: {args:?}"))
+            };
+            let (mx, ms) = (grab("-Xmx"), grab("-Xms"));
+            assert_eq!(mx, mb, "-Xmx 应当就是用户设的值：{args:?}");
+            assert!(
+                ms <= mx,
+                "-Xms {ms}M 超过了 -Xmx {mx}M，JVM 会拒绝启动：{args:?}"
+            );
+            // 高于 256MB 时仍然给到 256MB（那是"别一开始就疯狂扩容"的通行做法）
+            assert_eq!(ms, 256.min(mb), "{args:?}");
+        }
+    }
+
     #[test]
     fn classpath_uses_platform_separator_and_ends_with_client_jar() {
         let win_plan = build_plan(&v1214(), &win(), &opts()).unwrap();
@@ -736,15 +778,30 @@ mod tests {
         assert!(matches!(err, Error::Config(_)), "{err:?}");
     }
 
+    /// Windows 上必须用 `java.exe` 而不是 `javaw.exe`：javaw 在 JVM **启动阶段**失败时
+    /// 弹消息框、不写 stderr 也不退出，于是"Java 版本不对"会变成一次没有输出、
+    /// 没有退出码的静默挂起。控制台窗口本来就已经由 CREATE_NO_WINDOW 挡住了。
     #[test]
-    fn windows_prefers_javaw_when_present() {
-        // 非 Windows 平台上原样返回（这条逻辑本来就只在 Windows 生效）
-        let p = PathBuf::from(if cfg!(windows) {
-            r"C:\jdk\bin\java.exe"
+    fn windows_uses_the_console_java_so_startup_errors_are_visible() {
+        if cfg!(windows) {
+            let dir = tempfile::tempdir().unwrap();
+            let bin = dir.path().join("bin");
+            std::fs::create_dir_all(&bin).unwrap();
+            let console = bin.join("java.exe");
+            let windowed = bin.join("javaw.exe");
+            std::fs::write(&console, b"").unwrap();
+            std::fs::write(&windowed, b"").unwrap();
+            // 即使用户在设置里填的是 javaw，也要换回 java
+            assert_eq!(windows_java(&windowed), console);
+            assert_eq!(windows_java(&console), console);
+            // 目录里只有 javaw 时不能凭空指一个不存在的 java.exe 过去
+            std::fs::remove_file(&console).unwrap();
+            assert_eq!(windows_java(&windowed), windowed);
         } else {
-            "/usr/bin/java"
-        });
-        assert_eq!(windows_java(&p), p);
+            // 非 Windows：原样返回（这套逻辑本来就只在 Windows 生效）
+            let p = PathBuf::from("/usr/bin/java");
+            assert_eq!(windows_java(&p), p);
+        }
     }
 
     #[test]
