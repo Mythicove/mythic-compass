@@ -1,0 +1,2 @@
+Error: A JNI error has occurred, please check your installation and try again
+Exception in thread "main" java.lang.OutOfMemoryError: Java heap space

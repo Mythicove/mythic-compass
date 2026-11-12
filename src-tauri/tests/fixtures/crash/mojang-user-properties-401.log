@@ -1,0 +1,12 @@
+[2810月2026 23:03:36.056] [Download-2/ERROR] [net.minecraft.client.Minecraft/]: Failed to fetch user properties
+com.mojang.authlib.exceptions.InvalidCredentialsException: Status: 401
+	at MC-BOOTSTRAP/authlib@6.0.57/com.mojang.authlib.exceptions.MinecraftClientHttpException.toAuthenticationException(MinecraftClientHttpException.java:59) ~[authlib-6.0.57.jar%23195!/:?]
+	at MC-BOOTSTRAP/authlib@6.0.57/com.mojang.authlib.yggdrasil.YggdrasilUserApiService.fetchProperties(YggdrasilUserApiService.java:150) ~[authlib-6.0.57.jar%23195!/:?]
+	at TRANSFORMER/minecraft@1.21.4/net.minecraft.client.Minecraft.lambda$new$2(Minecraft.java:428) ~[client-1.21.4-20241203.161809-srg.jar%23246!/:?]
+	at java.base/java.util.concurrent.CompletableFuture$AsyncSupply.run(CompletableFuture.java:1768) ~[?:?]
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(ThreadPoolExecutor.java:1144) ~[?:?]
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(ThreadPoolExecutor.java:642) ~[?:?]
+	at java.base/java.lang.Thread.run(Thread.java:1583) [?:?]
+Caused by: com.mojang.authlib.exceptions.MinecraftClientHttpException: Status: 401
+	at MC-BOOTSTRAP/authlib@6.0.57/com.mojang.authlib.minecraft.client.MinecraftClient.readInputStream(MinecraftClient.java:103) ~[authlib-6.0.57.jar%23195!/:?]
+	at MC-BOOTSTRAP/authlib@6.0.57/com.mojang.authlib.minecraft.client.MinecraftClient.get(MinecraftClient.java:56) ~[authlib-6.0.57.jar%23195!/:?]

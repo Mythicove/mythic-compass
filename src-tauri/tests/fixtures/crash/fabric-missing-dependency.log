@@ -1,0 +1,16 @@
+[21:20:24] [main/INFO]: Loading Minecraft 1.21.4 with Fabric Loader 0.20.1
+[21:20:24] [main/WARN]: Mod resolution failed
+[21:20:24] [main/INFO]: Immediate reason: [HARD_DEP_NO_CANDIDATE compasstest_missing_dep 1.0.0 {depends some-mod-that-is-not-installed @ [*]}, ROOT_FORCELOAD_SINGLE compasstest_missing_dep 1.0.0]
+[21:20:24] [main/INFO]: Reason: [HARD_DEP compasstest_missing_dep 1.0.0 {depends some-mod-that-is-not-installed @ [*]}]
+[21:20:24] [main/INFO]: Fix: add [add:some-mod-that-is-not-installed 1 ([(-∞,∞)])], remove [], replace []
+[21:20:24] [main/ERROR]: Incompatible mods found!
+net.fabricmc.loader.impl.FormattedException: Some of your mods are incompatible with the game or each other!
+已找到潛在解決方案，這可能會解決你的問題：
+	 - 安裝 some-mod-that-is-not-installed，所有版本。
+更多資訊：
+	 - 模組 'compasstest_missing_dep' (compasstest_missing_dep) 1.0.0 需要 所有版本 some-mod-that-is-not-installed，但該版本缺失！
+	at net.fabricmc.loader.impl.FormattedException.ofLocalized(FormattedException.java:51) ~[fabric-loader-0.20.1.jar:?]
+	at net.fabricmc.loader.impl.FabricLoaderImpl.load(FabricLoaderImpl.java:207) ~[fabric-loader-0.20.1.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.init(Knot.java:142) ~[fabric-loader-0.20.1.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.Knot.launch(Knot.java:66) [fabric-loader-0.20.1.jar:?]
+	at net.fabricmc.loader.impl.launch.knot.KnotClient.main(KnotClient.java:23) [fabric-loader-0.20.1.jar:?]

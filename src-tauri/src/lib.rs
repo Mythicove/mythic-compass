@@ -9,21 +9,28 @@ pub mod api;
 pub mod archive;
 pub mod assets;
 pub mod authlibinjector;
+pub mod cli;
 pub mod commands;
 pub mod config;
 pub mod content;
+pub mod diagnose;
 pub mod error;
 pub mod forge;
 pub mod install;
 pub mod instance;
 pub mod java;
+pub mod javaget;
 pub mod launch;
 pub mod loader;
+pub mod logconfig;
+pub mod logs;
 pub mod meta;
 pub mod modpack;
 pub mod net;
+pub mod oplog;
 pub mod paths;
 pub mod runner;
+pub mod session;
 pub mod state;
 pub mod version;
 
@@ -42,7 +49,22 @@ pub fn run() {
         // 而复制文件需要真实的文件系统路径。
         .plugin(tauri_plugin_dialog::init())
         .setup(|app| {
+            // The updater is optional: an unsigned/local build has no plugin
+            // configuration and must still open instead of failing at startup.
+            if app
+                .config()
+                .plugins
+                .0
+                .get("updater")
+                .and_then(|value| value.get("pubkey"))
+                .and_then(|value| value.as_str())
+                .is_some_and(|key| !key.trim().is_empty())
+            {
+                app.handle()
+                    .plugin(tauri_plugin_updater::Builder::new().build())?;
+            }
             // 便携模式（exe 旁边有 portable.txt）优先，否则用平台的用户数据目录。
+            // 取不到 exe 路径时退回后者：便携模式是可选便利，不该成为启动的前置条件。
             let root = std::env::current_exe()
                 .ok()
                 .map(|exe| exe.with_file_name(paths::PORTABLE_MARKER))
@@ -87,6 +109,20 @@ pub fn run() {
             commands::account_add_offline,
             commands::account_set_active,
             commands::account_remove,
+            commands::credentials_list,
+            commands::credentials_create,
+            commands::credentials_delete,
+            commands::instance_logs,
+            commands::instance_log_read,
+            commands::instance_diagnose,
+            commands::instance_logs_dir,
+            commands::operation_log,
+            commands::operation_log_path,
+            commands::cli_intent,
+            commands::update_configured,
+            commands::java_overview,
+            commands::java_download,
+            commands::java_remove,
             commands::mirror_skin_data_url,
             commands::hoard_search,
             commands::hoard_versions,

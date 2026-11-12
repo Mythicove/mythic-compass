@@ -6,15 +6,18 @@
 use std::path::PathBuf;
 
 use crate::account::Account;
+use crate::api::ApiClient;
 use crate::authlibinjector;
 use crate::config::Config;
 use crate::error::Error;
 use crate::install::split_libraries;
 use crate::instance::{self, Instance};
-use crate::java;
+use crate::java::{self, JavaRuntime};
+use crate::javaget;
 use crate::launch::{self, LaunchOptions, LaunchPlan};
+use crate::logconfig;
 use crate::meta::MetaClient;
-use crate::net::Downloader;
+use crate::net::{Downloader, ProgressSink};
 use crate::paths::Paths;
 use crate::version::{OsInfo, VersionJson};
 
@@ -103,18 +106,17 @@ pub fn build(input: &LaunchInput) -> Result<LaunchPlan, Error> {
         )));
     }
 
-    // 日志配置文件：只有真的在磁盘上才传，否则 JVM 会因为找不到文件启动失败
-    let logging_config = input
-        .version
-        .logging
-        .as_ref()
-        .and_then(|l| l.client.as_ref())
-        .map(|c| {
+    // 日志配置文件：用**我们自己生成的**那份（纯文本控制台布局），不是 Mojang 的
+    // `logging.client.file.id`——后者控制台是 XML 布局，会让 stdout 变成 CDATA。
+    // 仍然只在文件真的在磁盘上时才传：JVM 找不到 -Dlog4j.configurationFile 指的文件
+    // 会直接启动失败，而那句话看起来像是游戏的错。
+    let logging_config = logconfig::wanted(input.version)
+        .then(|| {
             input
                 .paths
                 .versions()
                 .join(&input.version.id)
-                .join(&c.file.id)
+                .join(logconfig::FILENAME)
         })
         .filter(|p| p.is_file());
 
@@ -180,6 +182,62 @@ pub struct PreparedLaunch {
     pub injected: bool,
 }
 
+/// 本机没有合适的 Java 时，下载版本 JSON 指定的那个官方运行时。
+///
+/// **进度必须往外报**：官方 JRE 实测 143MB（`jre-legacy`），静默下载会让启动看起来像卡死，
+/// 而用户唯一能做的动作就是强杀启动器——那又会留下半截文件。
+///
+/// 这个平台没有官方运行时时（实测：Linux arm64 整个不在 Mojang 的索引里，
+/// Apple Silicon 上没有 `jre-legacy`/`alpha`/`beta`）**明确报错**并指出手动指定路径这条出路，
+/// 而不是让用户盯着一个永远不会有结果的进度条。
+async fn download_java(
+    paths: &Paths,
+    http: &reqwest::Client,
+    cfg: &Config,
+    version: &VersionJson,
+    major: u32,
+    exact: bool,
+    progress: Option<ProgressSink>,
+) -> Result<JavaRuntime, Error> {
+    let component = version
+        .java_version
+        .as_ref()
+        .map(|j| j.component.as_str())
+        .filter(|c| !c.is_empty());
+    let os = OsInfo::current();
+    let Some(component) = component else {
+        return Err(Error::Config(format!(
+            "no Java {major} runtime found, and this version does not say which official runtime to fetch \
+             (安装 JDK {major} 或在实例设置里指定 Java 路径)"
+        )));
+    };
+    if javaget::platform_key(&os).is_none() {
+        return Err(Error::Config(format!(
+            "no Java {major} runtime found, and Mojang publishes no official runtime for this platform \
+             (在实例设置里手动指定 Java 路径)"
+        )));
+    }
+    let api = ApiClient::new(http.clone());
+    let dl = Downloader::new(
+        http.clone(),
+        cfg.download.concurrency,
+        cfg.download.mirror.clone(),
+    );
+    let got = javaget::install(&api, &dl, paths, &os, component, progress).await?;
+    // 下完之后**用同一套挑选逻辑**再找一次，而不是自己比版本号：
+    // "这个 JRE 满不满足要求"只该有一处实现（java::find），
+    // 否则两条判断规则会在某天分岔，而分岔的症状是"明明装好了还是说没有 Java"。
+    java::find(major, exact, Some(&paths.java()))
+        .await
+        .ok_or_else(|| {
+            Error::Config(format!(
+                "downloaded the official {component} runtime ({}), but it does not satisfy Java {major} \
+                 (exact={exact}); 在实例设置里手动指定 Java 路径",
+                got.version_name
+            ))
+        })
+}
+
 /// 启动编排的**唯一实现**：读已装版本 → 选 Java → 备 authlib-injector → 拼命令行 → 解压 natives。
 ///
 /// 命令层与冒烟测试都走这里，避免"测试里重写一遍顺序"——那种测试只能证明它自己是对的。
@@ -189,6 +247,7 @@ pub async fn prepare_launch(
     cfg: &Config,
     inst: &Instance,
     account: &Account,
+    progress: Option<ProgressSink>,
 ) -> Result<PreparedLaunch, Error> {
     let version = read_installed_version(paths, &inst.version_id)?;
     let os = OsInfo::current();
@@ -199,13 +258,12 @@ pub async fn prepare_launch(
         Some(p) => java::probe(p)
             .await
             .ok_or_else(|| Error::Config(format!("{} is not a usable java", p.display())))?,
-        None => java::find(major, exact, Some(&paths.java()))
-            .await
-            .ok_or_else(|| {
-                Error::Config(format!(
-                    "no Java {major} runtime found (安装 JDK {major} 或在实例里指定路径)"
-                ))
-            })?,
+        None => match java::find(major, exact, Some(&paths.java())).await {
+            Some(rt) => rt,
+            // 本机没有合适的 Java：下载官方运行时。这一步就是 P5-W14 的验收条件
+            // "干净机器上不装 Java 也能启动"。失败时仍然要告诉用户"手动指定路径"这条出路。
+            None => download_java(paths, http, cfg, &version, major, exact, progress).await?,
+        },
     };
 
     // authlib-injector：拿不到就不注入（游戏仍能启动，只是没有我们的皮肤），
@@ -306,8 +364,10 @@ mod tests {
             std::fs::create_dir_all(p.parent().unwrap()).unwrap();
             std::fs::write(&p, b"fake lib").unwrap();
         }
-        if let Some(logging) = v.logging.as_ref().and_then(|l| l.client.as_ref()) {
-            std::fs::write(dir.join(&logging.file.id), b"<Configuration/>").unwrap();
+        // 摆一份日志配置在 runner 会去找的位置（我们自己生成的那个文件名，
+        // 不是 Mojang 的 logging.client.file.id）
+        if crate::logconfig::wanted(v) {
+            std::fs::write(dir.join(crate::logconfig::FILENAME), b"<Configuration/>").unwrap();
         }
     }
 
@@ -344,6 +404,7 @@ mod tests {
             client_token: "ct".into(),
             api_url: "https://mc.example.com".into(),
             signed_in_at: 0,
+            token_obtained_at: 0,
             kind: crate::account::AccountKind::Yggdrasil,
         }
     }

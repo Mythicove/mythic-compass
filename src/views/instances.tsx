@@ -55,7 +55,17 @@ function mbOf(bytes: number): string {
   return (bytes / 1024 / 1024).toFixed(1);
 }
 
-export function InstancesView({ onOpenContent }: { onOpenContent: (slug: string) => void }) {
+export function InstancesView({
+  onOpenContent,
+  initialImportPath,
+  onImportPathConsumed,
+}: {
+  onOpenContent: (slug: string) => void;
+  /** 双击 `.mrpack` 或 `--import` 带进来的路径；非空时自动走"看一眼再确认"那一步 */
+  initialImportPath?: string | null;
+  /** 消费掉之后通知上层清掉，否则每次回到实例页都会重新弹一遍 */
+  onImportPathConsumed?: () => void;
+}) {
   const { t } = useI18n();
   const [instances, setInstances] = useState<Instance[] | null>(null);
   const [installed, setInstalled] = useState<string[]>([]);
@@ -333,6 +343,30 @@ export function InstancesView({ onOpenContent }: { onOpenContent: (slug: string)
       setImportInfo({ path: picked, info });
       setImportName(info.name);
     });
+
+  // 双击 .mrpack（或 --import）进来的：走与"选文件"**完全相同**的那一步——先只读地
+  // 看一眼，让用户确认内容与实例名，再解压落盘。**不自动导入**：一次双击就写几十个文件
+  // 进 instances/ 并下载几百 MB，用户至少该先看到"这是什么、要叫什么名字"。
+  useEffect(() => {
+    if (!initialImportPath) return;
+    let cancelled = false;
+    void (async () => {
+      try {
+        const info = await ipc.modpackInspect(initialImportPath);
+        if (cancelled) return;
+        setPackInfo({ path: initialImportPath, info });
+        setPackName(info.name);
+      } catch (e) {
+        if (!cancelled) setError(t(errorKey(toIpcError(e).code)));
+      } finally {
+        // 无论成功失败都要消费掉：否则每次回到实例页都会重新弹一遍同一个包
+        if (!cancelled) onImportPathConsumed?.();
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [initialImportPath, onImportPathConsumed, t]);
 
   /** 第二步：用户看过内容并确认之后才解压落盘。 */
   const doImport = () =>

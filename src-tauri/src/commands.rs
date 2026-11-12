@@ -10,23 +10,32 @@ use serde::Serialize;
 use tauri::{AppHandle, Emitter, State};
 use tokio::sync::Notify;
 
-use crate::account::{self, Account, AccountView, AccountsView, now_unix};
-use crate::api::{File as HoardFile, Project, SearchResponse, Version, png_data_url};
+use crate::account::{self, Account, AccountView, AccountsView, AuthCheckView, now_unix};
+use crate::api::{
+    ApiClient, CredentialView, File as HoardFile, PlayerCredential, Project, SearchResponse,
+    Version, png_data_url,
+};
 use crate::archive::ZipSummary;
+use crate::cli::{self, Intent};
 use crate::config::{self, Config};
 use crate::content::{self, ContentItem, ContentStats, DependencyReport, Kind};
 use crate::error::Error;
 use crate::install::{InstalledVersion, Installer};
 use crate::instance::{self, ArchiveInfo, Instance, InstanceLoader, InstanceSettings};
 use crate::java::{self, JavaRuntime};
+use crate::javaget::{self, InstalledJava, JavaOffer, JavaOverview};
 use crate::launch;
 use crate::loader::{self, LoaderKind, LoaderVersion};
+use crate::logs::{self, Diagnosis, LogArchive, LogText};
 use crate::meta::{ManifestEntry, MetaClient};
 use crate::modpack::{self, ModpackExport, ModpackInfo, ModpackInstall};
 use crate::net::{self, Downloader};
+use crate::oplog;
 use crate::paths::{Paths, PathsInfo};
 use crate::runner;
+use crate::session;
 use crate::state::{AppState, CopyProgress, GameExit, RunningGame};
+use crate::version::OsInfo;
 
 /// 前端订阅的事件名：下载进度 / 游戏日志 / 游戏退出 / 实例复制进度。
 pub const PROGRESS_EVENT: &str = "compass://progress";
@@ -72,26 +81,60 @@ pub async fn auth_login(
     let resp = state
         .api
         .authenticate(&api_url, &player_name, &password)
-        .await?;
+        .await
+        .map_err(login_error)?;
     // 一条独立密码只证明一个玩家，selectedProfile 必然存在；缺失即后端契约破了
     let profile = resp
         .selected_profile
         .clone()
         .or_else(|| resp.available_profiles.first().cloned())
         .ok_or_else(|| Error::Invalid("authenticate response carries no profile".into()))?;
+    let now = now_unix();
     let account = Account {
         player_name: profile.name,
         player_uuid: profile.id,
         access_token: resp.access_token,
         client_token: resp.client_token,
         api_url,
-        signed_in_at: now_unix(),
+        signed_in_at: now,
+        // 令牌刚拿到，寿命从此刻起算（`signed_in_at` 与它此刻同值，但含义不同：
+        // 轮换令牌会更新这一个，不会更新那一个）
+        token_obtained_at: now,
         kind: account::AccountKind::Yggdrasil,
     };
     account::save(&state.paths, &account)?;
+    log_op(
+        &state,
+        "auth_login",
+        format!("{} @ {}", account.player_name, account.api_url),
+    );
     let view = account.view();
     *state.account.write().await = Some(account);
     Ok(view)
+}
+
+/// 把"登录被拒"分成启动器能给出动作的两类。
+///
+/// mirror 对 `binding_required` 与 `email_not_verified` 给稳定码，照原样透传即可。
+/// 其余拒绝一律是 `"Invalid credentials. Invalid username or password."`——**故意**不给
+/// 稳定码，也故意不区分"没这个玩家"/"密码错"/"这个玩家还没有独立密码"：区分了就等于
+/// 让人拿玩家名探测账号是否存在。那段文案也是 Yggdrasil 协议的 `errorMessage`，
+/// HMCL/Prism + authlib-injector 会把它原样显示给用户，所以**不能在 wire 上加码**，
+/// 只能在这里、只对启动器自己映射。
+///
+/// 值得专门映射是因为这是最常见的首次失败：ADR-0012 之后，存量用户在网站上补建
+/// 独立密码之前一律登不进启动器，而他们看到的原文案只会说"用户名或密码错误"。
+fn login_error(e: Error) -> Error {
+    match e {
+        Error::Api {
+            status: 403, code, ..
+        } if code.is_empty() => Error::Api {
+            status: 403,
+            code: "invalid_credentials".into(),
+            detail: "invalid player name or launcher password".into(),
+        },
+        other => other,
+    }
 }
 
 /// 登出：先尽力让服务端作废令牌（`/authserver/invalidate`，失败不阻塞本地登出），再清本地。
@@ -105,39 +148,69 @@ pub async fn auth_logout(state: State<'_, Arc<AppState>>) -> Result<(), Error> {
             .invalidate(&a.api_url, &a.access_token, &a.client_token)
             .await;
     }
+    if let Some(a) = state.account.read().await.clone() {
+        log_op(&state, "auth_logout", a.player_name);
+    }
     *state.account.write().await = None;
     account::clear(&state.paths)
 }
 
-/// 校验本地令牌是否仍然有效；只有服务端明确判定令牌无效（401/403）才清登录态。
-/// 其余一切错误（网络、后端 5xx、响应解码失败）都保留会话：
+/// 校验本地令牌是否仍然有效，并在它快到期时**主动轮换**；只有服务端明确判定令牌无效
+/// （401/403）才清登录态。其余一切错误（网络、后端 5xx、响应解码失败）都保留会话：
 /// 离线启动不该把人踢出去，一次抖动也不该逼用户重新登录。
 #[tauri::command]
-pub async fn auth_check(state: State<'_, Arc<AppState>>) -> Result<Option<AccountView>, Error> {
+pub async fn auth_check(state: State<'_, Arc<AppState>>) -> Result<AuthCheckView, Error> {
     let current = state.account.read().await.clone();
     let Some(a) = current else {
-        return Ok(None);
+        return Ok(AuthCheckView {
+            account: None,
+            expired: false,
+        });
     };
     // 离线账号没有令牌也没有站点可校验：拿空 api_url 去 validate 必然失败，
     // 而下面的分支会把"401/403"当成令牌失效并清掉账号——离线账号会被静默删除
     if a.kind == account::AccountKind::Offline {
-        return Ok(Some(a.view()));
+        return Ok(AuthCheckView {
+            account: Some(a.view()),
+            expired: false,
+        });
     }
     match state
         .api
         .validate(&a.api_url, &a.access_token, &a.client_token)
         .await
     {
-        Ok(()) => Ok(Some(a.view())),
+        // 令牌有效：顺手看看该不该轮换（"静默重登"的实现是别让它静默地死掉）
+        Ok(()) => Ok(AuthCheckView {
+            account: Some(with_fresh_token(&state, a).await.view()),
+            expired: false,
+        }),
         Err(Error::Api {
             status: 401 | 403, ..
         }) => {
             *state.account.write().await = None;
             account::clear(&state.paths)?;
-            Ok(None)
+            Ok(AuthCheckView {
+                account: None,
+                expired: true,
+            })
         }
-        Err(_) => Ok(Some(a.view())),
+        Err(_) => Ok(AuthCheckView {
+            account: Some(a.view()),
+            expired: false,
+        }),
     }
+}
+
+/// 轮换令牌（策略在 `session.rs`），并把结果同步进内存缓存。
+///
+/// 缓存必须跟着换：`state.account` 是启动时读进来的，不同步的话本次启动用的还是
+/// 那个已经被 mirror 作废的旧令牌（refresh 会销毁原会话），症状是一个来自服务器的
+/// "无效会话"，看不出根因在启动器这边。
+async fn with_fresh_token(state: &State<'_, Arc<AppState>>, a: Account) -> Account {
+    let next = session::rotate_if_due(&state.api, &state.paths, a).await;
+    *state.account.write().await = Some(next.clone());
+    next
 }
 
 /// 账号总览：列表 + 当前选中的 id + 机密存储的现状。
@@ -201,6 +274,170 @@ async fn sync_active(state: &State<'_, Arc<AppState>>) -> Result<Option<AccountV
     *state.account.write().await = account;
     Ok(view)
 }
+
+// ---------------------------------------------------------------------------
+// 启动器独立密码（ADR-0012）
+//
+// 这三个命令都只作用于**当前账号自己的玩家**：mirror 侧已把启动器会话按玩家收窄，
+// 传别人的玩家名会得到 404 而不是别人的数据。玩家名取自账号本身而不是命令参数，
+// 于是前端根本没有"填一个别的玩家名"的入口。
+// ---------------------------------------------------------------------------
+
+/// 当前账号的独立密码列表。只有元数据（标签/创建时间/最近使用），永不含明文。
+#[tauri::command]
+pub async fn credentials_list(
+    state: State<'_, Arc<AppState>>,
+) -> Result<Vec<CredentialView>, Error> {
+    let a = site_account(&state).await?;
+    Ok(state
+        .api
+        .list_credentials(&a.api_url, &a.access_token, &a.player_name)
+        .await?
+        .iter()
+        .map(PlayerCredential::view)
+        .collect())
+}
+
+/// 为当前玩家新增一条独立密码（每台设备一条，上限由 mirror 定，超了回 409）。
+///
+/// `password` 明文只在这一次 IPC 调用里存在：不落盘、不进日志、不回显。
+/// 前端要配套——输入框用 password 类型，提交后立刻清掉那个 state。
+#[tauri::command]
+pub async fn credentials_create(
+    state: State<'_, Arc<AppState>>,
+    label: String,
+    password: String,
+) -> Result<CredentialView, Error> {
+    let a = site_account(&state).await?;
+    Ok(state
+        .api
+        .create_credential(
+            &a.api_url,
+            &a.access_token,
+            &a.player_name,
+            &label,
+            &password,
+        )
+        .await?
+        .view())
+}
+
+/// 撤销一条独立密码。由它建立的会话经外键级联**立即**失效。
+///
+/// 如果撤的正是当前会话所由建立的那一条，启动器自己就会掉线——而启动器无从知道是哪一条
+/// （认证响应里不带 credential id）。所以这是 UI 必须提前说明的后果，不是能拦下的错误；
+/// 掉线之后下一次 `auth_check` 会以 `expired: true` 把它说清楚。
+#[tauri::command]
+pub async fn credentials_delete(state: State<'_, Arc<AppState>>, id: String) -> Result<(), Error> {
+    let a = site_account(&state).await?;
+    state
+        .api
+        .delete_credential(&a.api_url, &a.access_token, &a.player_name, &id)
+        .await
+}
+
+/// 取当前账号，并要求它是站点账号。
+///
+/// 独立密码是 mirror 的概念：离线账号既没有站点也没有令牌，无所谓"独立密码"。
+/// 前端按 `kind` 本来就不给离线账号显示这个面板，这里是兜底——用 `Invalid` 而不是
+/// 新开一个错误变体，因为走到这里说明调用方错了，不是用户需要被解释的处境。
+async fn site_account(state: &State<'_, Arc<AppState>>) -> Result<Account, Error> {
+    let a = state
+        .account
+        .read()
+        .await
+        .clone()
+        .ok_or(Error::NotSignedIn)?;
+    match a.kind {
+        account::AccountKind::Yggdrasil if !a.access_token.is_empty() => Ok(a),
+        _ => Err(Error::Invalid(
+            "only site accounts have launcher credentials".into(),
+        )),
+    }
+}
+
+// ---------------------------------------------------------------------------
+// 日志与诊断
+// ---------------------------------------------------------------------------
+
+/// 记一条操作日志。**永不失败**：记不上日志不该让安装或启动失败。
+fn log_op(state: &AppState, action: &str, detail: impl std::fmt::Display) {
+    oplog::record(&state.paths, action, &detail.to_string());
+}
+
+/// 这次启动实际用的内存上限（实例覆盖优先，其次全局默认）。只为写进操作日志。
+fn info_memory_mb(inst: &Instance, cfg: &Config) -> u32 {
+    inst.memory_mb.unwrap_or(cfg.defaults.memory_mb)
+}
+
+/// 这个实例的日志与崩溃报告清单（新的在前）。
+/// 没跑过的实例返回空列表，不是错误。
+#[tauri::command]
+pub async fn instance_logs(
+    state: State<'_, Arc<AppState>>,
+    slug: String,
+) -> Result<Vec<LogArchive>, Error> {
+    let paths = state.paths.clone();
+    tokio::task::spawn_blocking(move || logs::list(&paths, &slug))
+        .await
+        .map_err(join_err)?
+}
+
+/// 读一份日志的**末尾**（上限见 `logs::MAX_VIEW_BYTES`）。
+/// `truncated` 为真时必须告诉用户看到的不是全文。
+#[tauri::command]
+pub async fn instance_log_read(
+    state: State<'_, Arc<AppState>>,
+    slug: String,
+    name: String,
+) -> Result<LogText, Error> {
+    let paths = state.paths.clone();
+    tokio::task::spawn_blocking(move || logs::read(&paths, &slug, &name))
+        .await
+        .map_err(join_err)?
+}
+
+/// 诊断这个实例最近一次失败：优先看崩溃报告，没有就看 `logs/latest.log`。
+#[tauri::command]
+pub async fn instance_diagnose(
+    state: State<'_, Arc<AppState>>,
+    slug: String,
+) -> Result<Diagnosis, Error> {
+    let paths = state.paths.clone();
+    tokio::task::spawn_blocking(move || logs::diagnose_latest(&paths, &slug))
+        .await
+        .map_err(join_err)?
+}
+
+/// 实例的 logs 目录（"打开目录"按钮用）。
+#[tauri::command]
+pub async fn instance_logs_dir(
+    state: State<'_, Arc<AppState>>,
+    slug: String,
+) -> Result<String, Error> {
+    Ok(logs::dir(&state.paths, &slug)?
+        .to_string_lossy()
+        .into_owned())
+}
+
+/// 启动器自己的操作日志全文（用户报问题时导出的就是这个）。
+#[tauri::command]
+pub async fn operation_log(state: State<'_, Arc<AppState>>) -> Result<String, Error> {
+    let paths = state.paths.clone();
+    tokio::task::spawn_blocking(move || oplog::read(&paths))
+        .await
+        .map_err(join_err)
+}
+
+/// 操作日志的文件路径（交给 opener 定位，不通过 webview 传内容）。
+#[tauri::command]
+pub async fn operation_log_path(state: State<'_, Arc<AppState>>) -> Result<String, Error> {
+    Ok(oplog::path(&state.paths).to_string_lossy().into_owned())
+}
+
+// ---------------------------------------------------------------------------
+// 皮肤
+// ---------------------------------------------------------------------------
 
 /// 皮肤纹理，转成 `data:` URL 交给 skinview3d。
 /// 走 Rust 而不是让 webview 直接 `<img src="https://mirror/skin/x">`：CSP 的 img-src 因此不必放行外站。
@@ -403,7 +640,7 @@ pub async fn versions_list(
 ) -> Result<Vec<ManifestEntry>, Error> {
     let cfg = state.config.read().await.clone();
     let meta = MetaClient::new(state.http.clone(), cfg.download.mirror.clone());
-    let manifest = meta.manifest().await?;
+    let manifest = meta.manifest_cached(&state.paths).await?;
     Ok(if include_snapshots {
         manifest.versions
     } else {
@@ -453,6 +690,25 @@ pub async fn install_version(
     let result = installer.install(&version_id, Some(tx)).await;
     // tx 随 result 之后被 drop，转发任务随之结束
     let _ = forwarder.await;
+    match &result {
+        Ok(v) => log_op(
+            &state,
+            "install_version",
+            format!(
+                "{} ok (downloaded {} skipped {} failed {})",
+                v.id,
+                v.download.downloaded,
+                v.download.skipped,
+                v.download.failed.len()
+            ),
+        ),
+        // 失败要记：用户来报"装不上"时，游戏日志还不存在，能说明过程的只有这一条
+        Err(e) => log_op(
+            &state,
+            "install_version",
+            format!("{version_id} failed: {e}"),
+        ),
+    }
     result
 }
 
@@ -491,6 +747,11 @@ pub async fn instance_create(
         ..Instance::default()
     };
     instance::save(&state.paths, &inst)?;
+    log_op(
+        &state,
+        "instance_create",
+        format!("{slug} version={}", inst.version_id),
+    );
     Ok(inst)
 }
 
@@ -690,8 +951,27 @@ pub async fn modpack_install(
         Some(tx),
     )
     .await;
-    // tx 在 result 之前 drop，转发任务才会结束
+    // tx 在 result 之后被 drop，转发任务随之结束
     let _ = forwarder.await;
+    match &result {
+        Ok(v) => log_op(
+            &state,
+            "modpack_install",
+            format!(
+                "{slug} ok (downloaded {} overrides {} optional {} failed {} missing_deps {})",
+                v.downloaded,
+                v.override_files,
+                v.optional_installed,
+                v.failed.len(),
+                v.deps.missing.len()
+            ),
+        ),
+        Err(e) => log_op(
+            &state,
+            "modpack_install",
+            format!("{slug} from {} failed: {e}", path.display()),
+        ),
+    }
     result
 }
 
@@ -725,6 +1005,175 @@ pub async fn instance_java(
     let version = runner::read_installed_version(&state.paths, &inst.version_id)?;
     let (major, exact) = runner::java_requirement(&version);
     Ok(java::find(major, exact, Some(&state.paths.java())).await)
+}
+
+// ---------------------------------------------------------------------------
+// 启动意图与自动更新
+// ---------------------------------------------------------------------------
+
+/// 启动时的命令行意图（`--instance/--launch/--import`、双击 `.mrpack`）。
+///
+/// 前端在启动时读一次。无法识别的参数会随 `unknown` 一起返回并显示出来——
+/// 打错参数却看到启动器正常起来，用户会以为命令生效了，然后去查一个不存在的问题。
+#[tauri::command]
+pub async fn cli_intent() -> Result<Intent, Error> {
+    Ok(cli::from_env())
+}
+
+// ---------------------------------------------------------------------------
+// 自动更新（P5-W15）
+// ---------------------------------------------------------------------------
+
+/// 这个构建有没有配好自动更新：`plugins.updater` 里得有非空的 `pubkey`。
+///
+/// **问配置，不要等 `check()` 报错再靠错误文案猜**：插件的错误文案不是我们的契约，
+/// 会随版本变；而"按文案判断该显示什么"这件事在本项目里已经明确避开过
+/// （见 i18n 里"稳定码而不是文案匹配"那条规矩）。
+///
+/// 没配 pubkey 是**正常状态**而不是错误：签名私钥必须由发布方自己生成并放进 CI 密钥，
+/// 不能由构建过程随手造一个（造出来的私钥一旦进了仓库或日志，更新链就等于没有签名）。
+/// 所以仓库里的 tauri.conf.json 不带 updater 段，CI 在有密钥时用 `--config` 注入；
+/// 本地构建出来的包这里返回 false，UI 据此说明"这个构建没有自动更新"，
+/// 而不是给一个点了必然失败的按钮。
+#[tauri::command]
+pub async fn update_configured(app: AppHandle) -> Result<bool, Error> {
+    Ok(app
+        .config()
+        .plugins
+        .0
+        .get("updater")
+        .and_then(|v| v.get("pubkey"))
+        .and_then(|v| v.as_str())
+        .is_some_and(|k| !k.trim().is_empty()))
+}
+
+// ---------------------------------------------------------------------------
+// Java 管理（P5-W14）
+// ---------------------------------------------------------------------------
+
+/// Java 管理页：本机探测到的、我们下载过的、以及这个平台上能下载的官方运行时。
+///
+/// 探测要真跑 `java -version`（一个坏掉的 JDK 或网络盘上的 java.exe 会让"路径存在"
+/// 这个判断毫无意义），所以这个命令是异步且可能慢的——UI 要有加载态。
+#[tauri::command]
+pub async fn java_overview(state: State<'_, Arc<AppState>>) -> Result<JavaOverview, Error> {
+    let paths = state.paths.clone();
+    let http = state.http.clone();
+    let os = OsInfo::current();
+
+    let mut runtimes = Vec::new();
+    for candidate in java::candidates(Some(&paths.java())) {
+        // 同一个 JRE 可能从多个来源被列出来（JAVA_HOME 与 cache/java 指向同一处），
+        // 去重按路径，不按版本：装了两个 Java 21 是正常情况，藏掉一个反而是骗人
+        if let Some(rt) = java::probe(&candidate).await
+            && !runtimes.iter().any(|r: &JavaRuntime| r.path == rt.path)
+        {
+            runtimes.push(rt);
+        }
+    }
+    runtimes.sort_by(|a, b| a.path.cmp(&b.path));
+
+    let api = ApiClient::new(http);
+    let (available, available_error) = match api
+        .get_json::<javaget::AllJson>(javaget::ALL_JSON_URL)
+        .await
+    {
+        Ok(all) => (
+            javaget::offers(&all, &os)
+                .into_iter()
+                // `minecraft-java-exe` 是官方启动器自己的 exe，不是 JRE：
+                // 它在同一份索引里，但下载下来对启动游戏没有任何用处
+                .filter(|(c, _)| c != "minecraft-java-exe")
+                .map(|(component, version_name)| JavaOffer {
+                    component,
+                    version_name,
+                })
+                .collect(),
+            None,
+        ),
+        // 索引取不到不影响"本机已有什么"，所以不整个命令失败：
+        // 用户仍然能看到并选用已装的 JRE
+        Err(e) => (Vec::new(), Some(e.to_string())),
+    };
+
+    Ok(JavaOverview {
+        runtimes,
+        downloaded: javaget::installed(&paths),
+        available,
+        available_error,
+    })
+}
+
+/// 下载一个官方运行时。进度走 `compass://progress`（与版本安装同一套），
+/// 因为官方 JRE 实测 143MB，静默下载看起来就像卡死。
+#[tauri::command]
+pub async fn java_download(
+    app: AppHandle,
+    state: State<'_, Arc<AppState>>,
+    component: String,
+) -> Result<InstalledJava, Error> {
+    let cfg = state.config.read().await.clone();
+    let api = ApiClient::new(state.http.clone());
+    let dl = Downloader::new(
+        state.http.clone(),
+        cfg.download.concurrency,
+        cfg.download.mirror.clone(),
+    );
+    let os = OsInfo::current();
+    let paths = state.paths.clone();
+
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let emitter = app.clone();
+    let forwarder = tokio::spawn(async move {
+        while let Some(p) = rx.recv().await {
+            let _ = emitter.emit(PROGRESS_EVENT, p);
+        }
+    });
+    let result = javaget::install(&api, &dl, &paths, &os, &component, Some(tx)).await;
+    let _ = forwarder.await;
+    match &result {
+        Ok(v) => log_op(
+            &state,
+            "java_download",
+            format!(
+                "{} ok ({} files, {} MB)",
+                v.component,
+                v.download.downloaded + v.download.skipped,
+                v.download.bytes / 1024 / 1024
+            ),
+        ),
+        Err(e) => log_op(&state, "java_download", format!("{component} failed: {e}")),
+    }
+    result
+}
+
+/// 删掉一个我们下载的运行时。只能删 `cache/java/` 下的目录：
+/// 用户自己装的 JDK 不在这儿，也不该由启动器删。
+#[tauri::command]
+pub async fn java_remove(state: State<'_, Arc<AppState>>, component: String) -> Result<(), Error> {
+    let dir = javaget::component_dir(&state.paths, &component)?;
+    // 二次确认它真在 java 缓存下（component_dir 已经校验过名字，这里防的是
+    // 将来有人改了 component_dir 而忘了这条不变量）
+    if !dir.starts_with(state.paths.java()) {
+        return Err(Error::Invalid(format!(
+            "refusing to delete outside the java cache: {}",
+            dir.display()
+        )));
+    }
+    if !javaget::installed(&state.paths)
+        .iter()
+        .any(|c| c == &component)
+    {
+        return Err(Error::NotFound(format!(
+            "not a downloaded runtime: {component}"
+        )));
+    }
+    tokio::task::spawn_blocking(move || std::fs::remove_dir_all(&dir))
+        .await
+        .map_err(join_err)?
+        .map_err(Error::Io)?;
+    log_op(&state, "java_remove", component.clone());
+    Ok(())
 }
 
 // ---------------------------------------------------------------------------
@@ -799,6 +1248,11 @@ pub async fn loader_install(
         game_version,
     });
     instance::save(&state.paths, &inst)?;
+    log_op(
+        &state,
+        "instance_create",
+        format!("{slug} version={}", inst.version_id),
+    );
     Ok(inst)
 }
 
@@ -988,10 +1442,37 @@ pub async fn instance_launch(
         .await
         .clone()
         .ok_or(Error::NotSignedIn)?;
+    // 进服时服务器才校验令牌，而那时报错来自游戏/服务器（"无效的会话"之类），
+    // 看不出根因是启动器拿着一个过期令牌。所以启动前先把快过期的换掉；
+    // 换不动就用现有的，绝不阻塞启动（离线启动与站点不可达都必须能玩）。
+    let account = with_fresh_token(&state, account).await;
     let inst = instance::load(&state.paths, &slug)?;
     // 启动编排（读版本 / 选 Java / 备 injector / 拼命令行 / 解压 natives）只有一份实现，
     // 在 runner 里；冒烟测试走同一条路径，所以它测的就是用户会跑到的代码。
-    let prepared = runner::prepare_launch(&state.paths, &state.http, &cfg, &inst, &account).await?;
+    //
+    // 进度通道在这里接上：本机缺 Java 时 prepare_launch 会去下官方 JRE（实测 143MB），
+    // 不报进度的话启动看起来就是卡死了，而用户唯一能做的动作是强杀启动器——
+    // 那又会留下半截文件。
+    let (java_tx, mut java_rx) = tokio::sync::mpsc::unbounded_channel();
+    let java_emitter = app.clone();
+    let java_forwarder = tokio::spawn(async move {
+        while let Some(p) = java_rx.recv().await {
+            let _ = java_emitter.emit(PROGRESS_EVENT, p);
+        }
+    });
+    let prepared = runner::prepare_launch(
+        &state.paths,
+        &state.http,
+        &cfg,
+        &inst,
+        &account,
+        Some(java_tx),
+    )
+    .await;
+    // java_tx 已被 move 进 prepare_launch，返回时即被 drop，转发任务随之结束；
+    // await 它是为了不漏掉最后几个进度事件（失败也要等，否则错误会先于进度到前端）
+    let _ = java_forwarder.await;
+    let prepared = prepared?;
     let plan = prepared.plan;
 
     let info = LaunchInfo {
@@ -1000,6 +1481,19 @@ pub async fn instance_launch(
         java: plan.program.clone(),
         java_version: prepared.java_version,
     };
+    // 记下"用什么启的"：用户报"进不去"时，Java 路径与版本号是第一件要问的事，
+    // 而那时进程早没了。不记令牌（log_op 的约定见 oplog 模块头）。
+    log_op(
+        &state,
+        "instance_launch",
+        format!(
+            "{slug} version={} java={} java_version={} memory={}MB",
+            inst.version_id,
+            plan.program.display(),
+            prepared.java_version,
+            info_memory_mb(&inst, &cfg)
+        ),
+    );
     // 先登记"正在运行"再拉起进程：反过来的话，进程可能在登记之前就退出了
     let kill = Arc::new(Notify::new());
     *state.running.write().await = Some(RunningGame {
@@ -1034,6 +1528,16 @@ pub async fn instance_launch(
                 Some(-1)
             }
         };
+        // 退出码是诊断的起点：非零退出时，日志页的"诊断"按钮才有东西可查。
+        // None = 被我们杀掉的（用户点了停止）。
+        oplog::record(
+            &supervisor_state.paths,
+            "game_exit",
+            &match code {
+                Some(c) => format!("{slug} code={c}"),
+                None => format!("{slug} stopped by user"),
+            },
+        );
         let _ = supervisor_app.emit(
             EXIT_EVENT,
             GameExit {

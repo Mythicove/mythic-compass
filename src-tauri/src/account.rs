@@ -65,12 +65,17 @@ pub struct Account {
     /// Unix 秒。不用字符串是为了不引日期库，格式化交给前端。
     #[serde(default)]
     pub signed_in_at: u64,
+    /// 当前令牌的取得时刻（来自 `Secrets.obtained_at`）。与 `signed_in_at` 分开：
+    /// 后者是"这个人什么时候登录的"，轮换令牌不该改写它；前者是"手上这个令牌还剩多久寿命"。
+    /// 只在 Rust 侧用于轮换判定，不进 `AccountView`。
+    #[serde(default)]
+    pub token_obtained_at: u64,
     #[serde(default)]
     pub kind: AccountKind,
 }
 
 /// 交给前端的账号视图：**不含令牌**。
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountView {
     pub player_name: String,
@@ -81,6 +86,13 @@ pub struct AccountView {
 }
 
 impl Account {
+    /// 这个账号在列表与机密存储里的键。由 (kind, api_url, player_uuid) 派生，
+    /// 所以任何拿到账号的地方都能重算出来，不必把 id 也塞进 `Account`
+    /// （塞了就要保证它与那三个字段始终一致，那是个能悄悄坏掉的不变量）。
+    pub fn id(&self) -> String {
+        account_id(self.kind, &self.api_url, &self.player_uuid)
+    }
+
     pub fn view(&self) -> AccountView {
         AccountView {
             player_name: self.player_name.clone(),
@@ -113,6 +125,16 @@ pub struct AccountEntry {
 pub struct Secrets {
     pub access_token: String,
     pub client_token: String,
+    /// 当前 accessToken 的取得时刻（Unix 秒）：登录时写入，每次轮换时更新。
+    ///
+    /// **和令牌放在同一个结构、同一个文件里**，不是因为它机密，而是因为它必须与令牌
+    /// 原子地一起变：分成两处存就会出现"新令牌 + 旧时间戳"，于是刚轮换完又立刻被判定为
+    /// 该轮换（每次检查都发一次请求），或反过来"旧令牌 + 新时间戳"，于是一个已经过期的
+    /// 令牌被当成新的，一直不轮换直到进服被拒。
+    ///
+    /// 0 = 来源不明（旧文件迁移过来的）。见 `needs_rotation`：一律当作该轮换。
+    #[serde(default)]
+    pub obtained_at: u64,
 }
 
 #[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
@@ -135,6 +157,21 @@ pub struct SecretStoreInfo {
     /// 不能让人以为已经加密——见模块头。
     pub encrypted: bool,
     pub path: String,
+}
+
+/// `auth_check` 的结果。
+///
+/// 两个字段而不是只回 `Option<AccountView>`，是因为 `None` 有两种完全不同的含义：
+/// "从来没登录过"与"本来登录着，但服务端判定令牌失效、已经把你登出了"。后者必须解释
+/// ——用户刚才明明还登录着，界面却一声不响地回到登录表单，看起来像启动器丢了账号。
+/// 前者不需要任何提示。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthCheckView {
+    pub account: Option<AccountView>,
+    /// 本地本来有账号，但令牌已被服务端判定失效并清除。
+    /// 前端据此说"登录已失效，请重新登录"，而不是静默显示未登录。
+    pub expired: bool,
 }
 
 /// 前端要的账号总览。
@@ -273,6 +310,20 @@ fn legacy_secrets(a: &Account) -> Secrets {
     Secrets {
         access_token: a.access_token.clone(),
         client_token: a.client_token.clone(),
+        obtained_at: token_obtained_at(a),
+    }
+}
+
+/// 令牌取得时刻：显式给的值优先，否则退回登录时刻。
+///
+/// 旧账号文件里没有这个字段。退回 `signed_in_at` 比退回 0（"来源不明 → 立刻轮换"）更接近
+/// 事实，也免得迁移过来的账号在第一次检查时就多发一个 refresh——而那个令牌多半已经过期，
+/// refresh 必然失败，白费一次往返还可能让日志里出现一条看着像故障的记录。
+fn token_obtained_at(a: &Account) -> u64 {
+    if a.token_obtained_at != 0 {
+        a.token_obtained_at
+    } else {
+        a.signed_in_at
     }
 }
 
@@ -318,6 +369,7 @@ pub fn active(paths: &Paths) -> Option<Account> {
     let id = list.active_id.as_deref()?;
     let entry = list.accounts.iter().find(|e| e.id == id)?;
     let secrets = load_secrets(paths).remove(id).unwrap_or_default();
+    let obtained_at = secrets.obtained_at;
     Some(Account {
         player_name: entry.player_name.clone(),
         player_uuid: entry.player_uuid.clone(),
@@ -325,6 +377,7 @@ pub fn active(paths: &Paths) -> Option<Account> {
         client_token: secrets.client_token,
         api_url: entry.api_url.clone(),
         signed_in_at: entry.signed_in_at,
+        token_obtained_at: obtained_at,
         kind: entry.kind,
     })
 }
@@ -354,6 +407,29 @@ pub fn save(paths: &Paths, account: &Account) -> Result<(), Error> {
         &Secrets {
             access_token: account.access_token.clone(),
             client_token: account.client_token.clone(),
+            obtained_at: token_obtained_at(account),
+        },
+    )
+}
+
+/// 轮换后写回新令牌与它的时间戳。两者必须在同一次写入里更新（见 `Secrets.obtained_at`）。
+///
+/// "什么时候该轮换"是策略，在 `session.rs`；这里只管落盘——保持本模块"换钥匙串只改
+/// `load_secrets` / `put_secrets` / `delete_secrets`"那条承诺不被联网逻辑污染。
+pub fn rotate_secrets(
+    paths: &Paths,
+    id: &str,
+    access_token: &str,
+    client_token: &str,
+    obtained_at: u64,
+) -> Result<(), Error> {
+    put_secrets(
+        paths,
+        id,
+        &Secrets {
+            access_token: access_token.to_string(),
+            client_token: client_token.to_string(),
+            obtained_at,
         },
     )
 }
@@ -434,10 +510,13 @@ pub fn add_offline(paths: &Paths, player_name: &str) -> Result<AccountEntry, Err
         client_token: String::new(),
         api_url: String::new(),
         signed_in_at: now_unix(),
+        // 没有令牌就没有令牌寿命。`needs_rotation(0, _)` 为真，但离线账号在
+        // `auth_check` 里会先短路返回，永远不会走到轮换那一步。
+        token_obtained_at: 0,
         kind: AccountKind::Offline,
     };
     save(paths, &account)?;
-    let id = account_id(AccountKind::Offline, "", &account.player_uuid);
+    let id = account.id();
     let (list, _) = load_list(paths);
     list.accounts
         .into_iter()
@@ -540,8 +619,67 @@ mod tests {
             client_token: format!("client-{uuid}"),
             api_url: "https://mirror.example.com".into(),
             signed_in_at: 1_700_000_000,
+            token_obtained_at: 1_700_000_000,
             kind: AccountKind::Yggdrasil,
         }
+    }
+
+    /// 轮换必须把**新令牌与它的时间戳一起**写进机密存储。
+    /// 分开写的话就会出现"新令牌 + 旧时间戳"（刚换完又立刻判定为该换，每次检查都发请求）
+    /// 或"旧令牌 + 新时间戳"（一个已经过期的令牌被当成新的，一直不换直到进服被拒）。
+    #[test]
+    fn rotation_persists_the_token_and_its_age_together() {
+        let (_d, p) = paths();
+        save(&p, &yggdrasil("Alice", "uuid-1")).unwrap();
+        let id = active(&p).unwrap().id();
+
+        rotate_secrets(&p, &id, "access-rotated", "client-rotated", 1_800_000_000).unwrap();
+
+        // 按文件断言：不看接口，直接看磁盘上写成了什么
+        let text = fs::read_to_string(p.secrets_file()).unwrap();
+        assert!(text.contains("access-rotated"), "新令牌没落盘：{text}");
+        assert!(
+            !text.contains("access-uuid-1"),
+            "旧令牌还留在机密文件里：{text}"
+        );
+        assert!(
+            text.contains("1800000000"),
+            "时间戳没跟着令牌一起落盘：{text}"
+        );
+
+        let got = active(&p).unwrap();
+        assert_eq!(got.access_token, "access-rotated");
+        assert_eq!(got.token_obtained_at, 1_800_000_000);
+        // 换过之后立刻再判：不该又到期（这就是"新令牌 + 旧时间戳"那个 bug 的正面回归）
+        assert!(!crate::session::needs_rotation(
+            got.token_obtained_at,
+            1_800_000_000 + 60
+        ));
+        // 身份部分不受轮换影响：轮换换的是令牌，不是这个人
+        assert_eq!(got.player_name, "Alice");
+        assert_eq!(got.signed_in_at, 1_700_000_000, "轮换不该改写登录时间");
+    }
+
+    /// 旧账号文件里没有 `obtainedAt`：迁移过来时退回登录时刻，而不是 0。
+    /// 退回 0 意味着"来源不明 → 立刻轮换"，于是每个升级上来的用户在第一次检查时
+    /// 都会多发一次 refresh——而那个令牌多半已经过期，refresh 必然失败。
+    #[test]
+    fn a_migrated_account_falls_back_to_its_sign_in_time_for_token_age() {
+        let legacy = Account {
+            token_obtained_at: 0,
+            ..yggdrasil("Alice", "uuid-1")
+        };
+        assert_eq!(token_obtained_at(&legacy), 1_700_000_000);
+        let explicit = yggdrasil("Alice", "uuid-1");
+        assert_eq!(token_obtained_at(&explicit), 1_700_000_000);
+
+        let (_d, p) = paths();
+        save(&p, &legacy).unwrap();
+        let got = active(&p).unwrap();
+        assert_eq!(
+            got.token_obtained_at, 1_700_000_000,
+            "落盘再读回来应该带着退回后的时刻，而不是 0"
+        );
     }
 
     #[test]

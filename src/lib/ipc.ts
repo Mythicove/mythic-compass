@@ -80,6 +80,81 @@ export interface AccountsView {
   store: SecretStoreInfo;
 }
 
+/** `authCheck` 的结果。
+ *
+ *  两个字段而不是 `account` 一个：`account` 为 null 有两种完全不同的含义——"从来没登录过"
+ *  与"本来登录着，但服务端判定令牌失效、已经把你登出了"。后者必须解释给用户，
+ *  否则他看到的是启动器莫名其妙回到了登录界面，而自己刚才明明还登录着。 */
+export interface AuthCheckView {
+  account: AccountView | null;
+  /** 本地本来有账号，但令牌已失效并被清除。UI 据此说"登录已失效，请重新登录"。 */
+  expired: boolean;
+}
+
+/** 一条启动器独立密码的元数据。**没有 password 字段**：mirror 永不返回哈希或明文，
+ *  所以这个类型不可能泄露它——不是"约定不去读"，是根本不在契约里。 */
+export interface CredentialView {
+  id: string;
+  /** 用户给的标签（如"台式机"），只为在列表里区分多条，不参与认证 */
+  name: string;
+  createdAt: string;
+  /** null = 从未用过 */
+  lastUsedAt: string | null;
+}
+
+/** 游戏日志（`logs/latest.log` 与滚动出去的 `.log.gz`）还是崩溃报告（`crash-reports/*.txt`） */
+export type LogKind = "gameLog" | "crashReport";
+
+export interface LogArchive {
+  /** **相对实例游戏目录**的路径（如 `logs/latest.log`）。读取时原样传回。 */
+  name: string;
+  kind: LogKind;
+  /** Unix 秒 */
+  modifiedAt: number;
+  /** 磁盘上的字节数。`.gz` 是压缩后的大小，与读出来的文本长度不是一回事。 */
+  size: number;
+  compressed: boolean;
+}
+
+export interface LogText {
+  name: string;
+  text: string;
+  /** 文件比上限大，`text` 只是**末尾**那一段——UI 必须说清楚，
+   *  否则用户会以为游戏就打了这么几句 */
+  truncated: boolean;
+}
+
+/** 严重程度。`warning` 不是"轻微"，而是"游戏还在跑，但有一件事没按你以为的方式发生"
+ *  ——实测现代 Forge/NeoForge 对混装的 mod 是跳过并继续启动，不是崩溃。 */
+export type FindingSeverity = "fatal" | "warning";
+
+/** 一键动作。按 `kind` 决定点了去哪儿，**不要解析文案**。 */
+export type DiagnoseAction =
+  | { kind: "installJava"; major: number }
+  | { kind: "installMod"; id: string }
+  | { kind: "adjustMemory" }
+  | { kind: "openContent" }
+  | { kind: "openLogs" };
+
+export interface Finding {
+  /** 稳定码，对应 i18n 的 `diagnose.<code>` */
+  code: string;
+  severity: FindingSeverity;
+  /** 命中的**原文行**：给用户看"我们是从哪句判断的"。一句能被核对的证据
+   *  比一段我们自己的转述更可信，也让我们在规则错的时候容易被发现。 */
+  evidence: string;
+  action: DiagnoseAction | null;
+}
+
+export interface Diagnosis {
+  /** 诊断依据的那份文件（相对路径）。null = 这个实例还没有任何日志，
+   *  与"日志里没查出问题"是两件事，UI 要分开说。 */
+  source: string | null;
+  findings: Finding[];
+  /** 文件超过诊断上限，只看了末尾：早期的告警可能漏掉 */
+  partial: boolean;
+}
+
 export interface Player {
   id: string;
   name: string;
@@ -289,6 +364,49 @@ export interface JavaRuntime {
   is64bit: boolean;
 }
 
+/** 这个平台上可下载的官方 Java 运行时 */
+export interface JavaOffer {
+  /** Mojang 的产品名（`java-runtime-delta` 等），也是 cache/java/ 下的目录名 */
+  component: string;
+  /** 索引里自称的版本号（如 `21.0.7`）。注意产品名到版本的映射是 Mojang 定的：
+   *  `java-runtime-gamma` 实测是 17 而不是 21，所以别从名字推版本。 */
+  versionName: string;
+}
+
+export interface JavaOverview {
+  /** 本机探测到的可用 JRE（`java -version` 真跑过的），含我们自己下载的 */
+  runtimes: JavaRuntime[];
+  /** `cache/java/` 下已装好的组件名 */
+  downloaded: string[];
+  available: JavaOffer[];
+  /** 取不到官方索引时的原因。UI 必须区分两种「available 为空」：
+   *  null = 这个平台根本没有官方运行时（如 Linux arm64），要引导手动指定路径；
+   *  有值 = 只是现在查不到，重试即可。混成一句「没有可用的 Java」会让前者看起来像临时故障。 */
+  availableError: string | null;
+}
+
+export interface InstalledJava {
+  /** `bin/java`（Windows 上是 `bin\java.exe`）的绝对路径 */
+  path: string;
+  component: string;
+  versionName: string;
+  download: DownloadSummary;
+}
+
+/** 启动时的命令行意图。
+ *
+ *  `importModpack` 也可能来自**双击 `.mrpack`**（文件关联会把路径作为位置参数传进来），
+ *  不一定有人真打了 `--import`。
+ *
+ *  `unknown` 是没能识别的参数，原样保留：打错参数却看到启动器正常起来，
+ *  用户会以为命令生效了，然后去查一个不存在的问题。 */
+export interface CliIntent {
+  instance: string | null;
+  launch: boolean;
+  importModpack: string | null;
+  unknown: string[];
+}
+
 /** Mod loader 类型。Forge 的版本号是 `<游戏版本>-<forge版本>`（如 `1.21.4-54.1.22`），
  *  与 NeoForge 的 `21.4.161` 不同构，UI 直接原样显示。 */
 export type LoaderKind = "fabric" | "quilt" | "neoforge" | "forge";
@@ -470,7 +588,9 @@ export const ipc = {
   authLogin: (playerName: string, password: string) =>
     invoke<AccountView>("auth_login", { playerName, password }),
   authLogout: () => invoke<void>("auth_logout"),
-  authCheck: () => invoke<AccountView | null>("auth_check"),
+  /** 校验令牌，快到期时顺带轮换（mirror 的 refresh 只能换未过期的令牌，所以必须提前）。
+   *  `expired` 为 true 表示"本来登录着、但令牌已失效并被清除"，与"从来没登录过"不同。 */
+  authCheck: () => invoke<AuthCheckView>("auth_check"),
   /** 账号总览。`store.encrypted` 为 false 时 UI 必须明示令牌是明文落盘的。 */
   accountsList: () => invoke<AccountsView>("accounts_list"),
   /** 加一个离线账号并切换过去（不需要网络，也没有令牌） */
@@ -479,6 +599,28 @@ export const ipc = {
   accountSetActive: (id: string) => invoke<AccountView>("account_set_active", { id }),
   /** 删账号连同它的令牌；删的是当前账号时自动切到剩下的第一个 */
   accountRemove: (id: string) => invoke<void>("account_remove", { id }),
+
+  /** 当前账号的启动器独立密码（只有元数据）。仅站点账号有；离线账号别调，Rust 侧会拒。 */
+  credentialsList: () => invoke<CredentialView[]>("credentials_list"),
+  /** 新建一条（每台设备一条，上限由 mirror 定，超了回 409）。
+   *  `password` 明文只在这一次调用里存在：调用方提交后要立刻清掉自己那个 state。 */
+  credentialsCreate: (label: string, password: string) =>
+    invoke<CredentialView>("credentials_create", { label, password }),
+  /** 撤销一条，由它建立的会话**立即**失效——可能包括当前这一个，届时下次 authCheck 会报 expired */
+  credentialsDelete: (id: string) => invoke<void>("credentials_delete", { id }),
+
+  /** 这个实例的日志与崩溃报告清单，新的在前。没跑过的实例返回空数组，不是错误。 */
+  instanceLogs: (slug: string) => invoke<LogArchive[]>("instance_logs", { slug }),
+  /** 读一份日志的**末尾**（512KB 上限）。`truncated` 为真时必须告诉用户不是全文。 */
+  instanceLogRead: (slug: string, name: string) =>
+    invoke<LogText>("instance_log_read", { slug, name }),
+  /** 诊断最近一次失败：优先崩溃报告，没有就看 latest.log */
+  instanceDiagnose: (slug: string) => invoke<Diagnosis>("instance_diagnose", { slug }),
+  /** 实例的 logs 目录（交给 opener 定位） */
+  instanceLogsDir: (slug: string) => invoke<string>("instance_logs_dir", { slug }),
+  /** 启动器自己的操作日志全文（用户报问题时导出的就是这个，里面没有任何机密） */
+  operationLog: () => invoke<string>("operation_log"),
+  operationLogPath: () => invoke<string>("operation_log_path"),
 
   /** 皮肤纹理的 data: URL；无皮肤返回 null（前端用默认模型） */
   skinDataUrl: (name: string) => invoke<string | null>("mirror_skin_data_url", { name }),
@@ -528,6 +670,21 @@ export const ipc = {
     invoke<ModpackExport>("modpack_export", { slug, dest, packVersion }),
   /** 这个实例会用哪个 Java；null = 没找到（此时启动会失败，UI 要提前说清楚） */
   instanceJava: (slug: string) => invoke<JavaRuntime | null>("instance_java", { slug }),
+
+  /** 这个构建有没有配好自动更新（`plugins.updater.pubkey` 非空）。   *  false 是**正常状态**而不是错误：签名私钥必须由发布方自己生成并放进 CI 密钥，
+   *  仓库里的配置不带 updater 段。UI 据此说明"这个构建没有自动更新"，
+   *  而不是给一个点了必然失败的按钮。 */
+  updateConfigured: () => invoke<boolean>("update_configured"),
+  /** 启动时的命令行意图；前端在启动时读一次 */
+  cliIntent: () => invoke<CliIntent>("cli_intent"),
+
+  /** Java 管理页的数据。探测要真跑 `java -version`，所以可能慢——调用方要有加载态。 */
+  javaOverview: () => invoke<JavaOverview>("java_overview"),
+  /** 下载官方运行时。进度走 `compass://progress`（与版本安装同一套）；实测 143MB，
+   *  静默下载看起来就像卡死。 */
+  javaDownload: (component: string) => invoke<InstalledJava>("java_download", { component }),
+  /** 删掉一个**我们下载的**运行时；用户自己装的 JDK 不在 cache/java/ 下，删不到 */
+  javaRemove: (component: string) => invoke<void>("java_remove", { component }),
 
   // ---- 实例内容（mods / 资源包 / 光影 / 存档）----
   contentList: (slug: string, kind: ContentKind) =>

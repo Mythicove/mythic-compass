@@ -157,6 +157,7 @@ async fn installs_neoforge_for_real() {
         client_token: "0".repeat(32),
         api_url: "https://mc.example.com".into(),
         signed_in_at: 0,
+        token_obtained_at: 0,
         kind: compass_lib::account::AccountKind::Yggdrasil,
     };
     let plan = compass_lib::runner::build(&compass_lib::runner::LaunchInput {
@@ -226,18 +227,6 @@ async fn installs_neoforge_for_real() {
     );
 }
 
-/// 把一条流逐行收进共享日志。两个流之间没有全局顺序，日志只用于找标记与看末尾。
-async fn pump_lines<R>(stream: R, sink: std::sync::Arc<std::sync::Mutex<Vec<String>>>)
-where
-    R: tokio::io::AsyncRead + Unpin + Send + 'static,
-{
-    use tokio::io::AsyncBufReadExt;
-    let mut lines = tokio::io::BufReader::new(stream).lines();
-    while let Ok(Some(line)) = lines.next_line().await {
-        sink.lock().unwrap().push(line);
-    }
-}
-
 /// 真启动**我们自己装出来的**那份 NeoForge——W9 验收里"装完真启动"这半。
 ///
 /// 上面那个测试钉的是启动计划（classpath 组成、模块参数、asm 只有一份），
@@ -294,6 +283,7 @@ async fn launches_neoforge_for_real() {
         client_token: "0".repeat(32),
         api_url: "https://mc.example.com".into(),
         signed_in_at: 0,
+        token_obtained_at: 0,
         kind: compass_lib::account::AccountKind::Yggdrasil,
     };
     let version = compass_lib::runner::read_installed_version(&paths, &installed.id).unwrap();
@@ -318,61 +308,28 @@ async fn launches_neoforge_for_real() {
         compass_lib::launch::extract_natives(&natives, &natives_dir).unwrap()
     );
 
-    let mut child = compass_lib::launch::spawn(&plan).await.unwrap();
-    let log = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
-    // stdout 与 stderr 是两个不同的类型，只能各自 spawn（合并到一个数组里编不过）
-    if let Some(stream) = child.stdout.take() {
-        let sink = std::sync::Arc::clone(&log);
-        tokio::spawn(pump_lines(stream, sink));
-    }
-    if let Some(stream) = child.stderr.take() {
-        let sink = std::sync::Arc::clone(&log);
-        tokio::spawn(pump_lines(stream, sink));
-    }
-
-    let started = std::time::Instant::now();
-    let limit = std::time::Duration::from_secs(420);
-    let mut reached: Option<String> = None;
-    let mut fatal: Option<String> = None;
-    let mut exited: Option<Option<i32>> = None;
-    while started.elapsed() < limit {
-        {
-            let lines = log.lock().unwrap();
-            reached = lines.iter().find(|l| l.contains(REACHED)).cloned();
-            fatal = lines
-                .iter()
-                .find(|l| FATAL.iter().any(|f| l.contains(f)))
-                .cloned();
-        }
-        if reached.is_some() || fatal.is_some() {
-            break;
-        }
-        match child.try_wait() {
-            Ok(Some(status)) => {
-                exited = Some(status.code());
-                break;
-            }
-            Ok(None) => {}
-            Err(e) => panic!("wait failed: {e}"),
-        }
-        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-    }
-    let _ = child.kill().await;
-
-    let lines = log.lock().unwrap().clone();
+    // 成功标记与失败标记都当停止条件，之后由 stopped_at 区分：
+    // 否则失败的那一次要一直干等到超时才知道结果。
+    let mut stop: Vec<&str> = FATAL.to_vec();
+    stop.push(REACHED);
+    let out = live::run_and_capture(&plan, std::time::Duration::from_secs(420), &stop).await;
     let log_path = data.path().join("launch.log");
-    std::fs::write(&log_path, lines.join("\n")).ok();
+    out.save(&log_path);
     println!(
-        "{} lines in {:.0}s, exit={:?}, log={}",
-        lines.len(),
-        started.elapsed().as_secs_f64(),
-        exited,
+        "{} lines in {:.0}s, exit={:?}, stopped_at={:?}, log={}",
+        out.lines.len(),
+        out.elapsed.as_secs_f64(),
+        out.exit,
+        out.stopped_at,
         log_path.display()
     );
-    let tail = |n: usize| -> String {
-        let skip = lines.len().saturating_sub(n);
-        lines[skip..].join("\n")
-    };
+    let lines = &out.lines;
+    let exited = out.exit;
+    let fatal = out
+        .stopped_at
+        .clone()
+        .filter(|m| FATAL.iter().any(|f| m.contains(f)));
+    let tail = |n: usize| out.tail(n);
 
     // 走到需要窗口之前的最后一步。标记只挑结构稳定的三行：
     // ModLauncher 的 target、原版认下账号与目录、LWJGL 绑定完成。
@@ -397,6 +354,6 @@ async fn launches_neoforge_for_real() {
     );
     println!(
         "neoforge real launch reached the client bootstrap: {:?}",
-        reached
+        out.stopped_at
     );
 }

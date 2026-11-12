@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
+import { openUrl } from "@tauri-apps/plugin-opener";
 import { I18nProvider, detectLocale, errorKey, useI18n, type Locale } from "./i18n";
 import {
   EVENTS,
@@ -18,6 +19,28 @@ import { LogsView } from "./views/logs";
 import "./shell.css";
 
 type View = "home" | "instances" | "content" | "logs" | "settings";
+
+/** 一个错误 = 稳定码 + 已本地化的文案。留着码是因为有些错误要配一个能点的动作。 */
+interface UiError {
+  code: string;
+  message: string;
+}
+
+/** 光说清楚还不够、得给一个动作的错误。**按稳定码匹配，不匹配文案**——
+ *  匹配文案的话改一个字就会让按钮消失，而且看不出是哪儿断的。
+ *  路径拼在 `config.apiUrl` 上：部署是单入口网关（web 与 mirror 同源），
+ *  且 Rust 侧的 `normalize_base_url` 已经去过尾斜杠。 */
+const ERROR_ACTIONS: Record<string, { labelKey: string; path: string }> = {
+  // 站点要求先绑定第三方。绑定只能在网站的浏览器授权流里完成（启动器参与不了回跳），
+  // 所以这里能做的最好的事就是把人送到那一页，而不是留一句 403。
+  binding_required: { labelKey: "errors.action.bindings", path: "/user/bindings" },
+  // 邮箱未验证：验证链接在邮件里，账号页可以重发
+  email_not_verified: { labelKey: "errors.action.account", path: "/user" },
+  // 名字或独立密码不对。mirror 故意不区分"密码错"与"这个玩家还没有独立密码"
+  // （一区分就能拿玩家名探测账号是否存在），所以文案要覆盖两种可能——而后者是
+  // ADR-0012 之后最常见的首次失败：存量用户在网站上补建独立密码之前登不进启动器。
+  invalid_credentials: { labelKey: "errors.action.credentials", path: "/user/security" },
+};
 
 // 游戏日志的模块级环形缓冲：订阅在 App 挂载就开始，早于用户打开日志页——
 // 否则启动头几秒的输出（往往正是崩溃原因）会丢。
@@ -102,22 +125,40 @@ function useTheme(theme: Config["theme"] | undefined) {
 
 function Shell() {
   const { t } = useI18n();
+  const { config } = useConfig();
   const [view, setView] = useState<View>("home");
   // 从实例页点「内容」跳过来时带上是哪个实例；直接点侧栏时为空，由内容页自己选。
   const [contentSlug, setContentSlug] = useState("");
+  /** 双击 .mrpack（或 --import）带进来的路径，交给实例页预填导入表单 */
+  const [importPath, setImportPath] = useState<string | null>(null);
   const [account, setAccount] = useState<AccountView | null>(null);
   const [checking, setChecking] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<UiError | null>(null);
+
+  /** 带上稳定码，因为有些错误要配一个动作（`binding_required` → 打开网站的绑定页）。
+   *  只存本地化文案的话，"这句话该不该带按钮"就得靠匹配文案来判断——那正是这个项目
+   *  在别处已经明确避开的做法。 */
+  const fail = (e: unknown) => {
+    const code = toIpcError(e).code;
+    setError({ code, message: t(errorKey(code)) });
+  };
 
   // 启动时校验一次本地令牌：失效则清掉登录态，网络错误仍算已登录（Rust 侧的语义）
   useEffect(() => {
     let cancelled = false;
     void (async () => {
       try {
-        const current = await ipc.authCheck();
-        if (!cancelled) setAccount(current);
+        const checked = await ipc.authCheck();
+        if (cancelled) return;
+        setAccount(checked.account);
+        // "本来登录着、但令牌已失效"必须说出来：否则用户看到的是启动器莫名其妙
+        // 回到了登录界面，而自己刚才明明还登录着
+        if (checked.expired) setError({ code: "auth", message: t("errors.auth") });
       } catch (e) {
-        if (!cancelled) setError(t(errorKey(toIpcError(e).code)));
+        if (!cancelled) {
+          const code = toIpcError(e).code;
+          setError({ code, message: t(errorKey(code)) });
+        }
       } finally {
         if (!cancelled) setChecking(false);
       }
@@ -161,7 +202,7 @@ function Shell() {
     try {
       setAccount(await ipc.authLogin(playerName, password));
     } catch (e) {
-      setError(t(errorKey(toIpcError(e).code)));
+      fail(e);
     }
   };
 
@@ -171,9 +212,45 @@ function Shell() {
       await ipc.authLogout();
       setAccount(null);
     } catch (e) {
-      setError(t(errorKey(toIpcError(e).code)));
+      fail(e);
     }
   };
+
+  const errorAction = error ? ERROR_ACTIONS[error.code] : undefined;
+
+  /** 命令行意图（也可能是双击 `.mrpack` 带进来的路径）。只在启动时读一次。 */
+  useEffect(() => {
+    let cancelled = false;
+    void ipc
+      .cliIntent()
+      .then((got) => {
+        if (cancelled) return;
+        // 打错的参数必须显示出来：静默忽略的话，用户会以为命令生效了，
+        // 然后去查一个不存在的问题（比如"为什么 --launch 没启动游戏"）
+        if (got.unknown.length > 0) {
+          setError({ code: "cli_unknown", message: t("errors.cli_unknown", { args: got.unknown.join(" ") }) });
+        }
+        if (got.importModpack) {
+          setImportPath(got.importModpack);
+          setView("instances");
+        } else if (got.instance && got.launch) {
+          // 直接启动。没登录时会失败并显示原因——那是如实的，
+          // 比"命令行启动"悄悄什么都不做要好
+          void ipc.instanceLaunch(got.instance).catch((e) => {
+            if (!cancelled) {
+              const code = toIpcError(e).code;
+              setError({ code, message: t(errorKey(code)) });
+            }
+          });
+        } else if (got.instance) {
+          setView("instances");
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [t]);
 
   return (
     <div className="shell">
@@ -209,15 +286,26 @@ function Shell() {
 
       <main className="content">
         {error && (
-          <p className="error" role="alert">
-            {error}
-          </p>
+          <div className="error" role="alert">
+            <span>{error.message}</span>
+            {errorAction && config?.apiUrl && (
+              <button
+                type="button"
+                className="link"
+                onClick={() => void openUrl(`${config.apiUrl}${errorAction.path}`)}
+              >
+                {t(errorAction.labelKey)}
+              </button>
+            )}
+          </div>
         )}
         {view === "home" && (
           <StartView account={account} checking={checking} onSignIn={signIn} />
         )}
         {view === "instances" && (
           <InstancesView
+            initialImportPath={importPath}
+            onImportPathConsumed={() => setImportPath(null)}
             onOpenContent={(slug) => {
               setContentSlug(slug);
               setView("content");
@@ -225,7 +313,15 @@ function Shell() {
           />
         )}
         {view === "content" && <ContentView initialSlug={contentSlug} />}
-        {view === "logs" && <LogsView />}
+        {view === "logs" && (
+          <LogsView
+            onOpenContent={(s) => {
+              setContentSlug(s);
+              setView("content");
+            }}
+            onOpenInstances={() => setView("instances")}
+          />
+        )}
         {view === "settings" && <SettingsView />}
       </main>
     </div>

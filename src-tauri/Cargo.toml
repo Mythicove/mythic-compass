@@ -45,11 +45,17 @@ regex = "1"
 os_info = "3"
 # natives jar 的解压（老版本 LWJGL）与 P3 的整合包安装都用它
 zip = { version = "2", default-features = false, features = ["deflate"] }
+# 读 logs/*.log.gz（游戏的滚动日志）。已经在依赖图里（经 png），不是新增下载。
+flate2 = "1"
 toml = "1.1.8"
 tauri-plugin-dialog = "2.8.4"
+tauri-plugin-updater = "2"
 
 [dev-dependencies]
 tempfile = "3"
+# crash_live 要现场造一个最小 Fabric mod（只含 fabric.mod.json），用来让**真的**
+# Fabric Loader 报出缺依赖/版本不符的原文。版本与主依赖一致，不会多下一份。
+zip = { version = "2", default-features = false, features = ["deflate"] }
 
 # See the optimization guideline for more details:
 # https://tauri.app/concept/size/#cargo-configuration

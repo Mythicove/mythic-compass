@@ -103,6 +103,90 @@ impl ApiClient {
         }
     }
 
+    /// 轮换令牌（`/authserver/refresh`）。
+    ///
+    /// **只能轮换尚未过期的令牌**：mirror 的 refresh 内部先 validate，过期的令牌救不回来。
+    /// 所以"静默重登"必须在到期前主动轮换，而不是等 validate 报 401 之后再补救——
+    /// 那时候唯一能做的只剩要求用户重新输入独立密码。
+    pub async fn refresh(
+        &self,
+        base: &str,
+        access_token: &str,
+        client_token: &str,
+    ) -> Result<RefreshResponse, Error> {
+        let body = serde_json::json!({ "accessToken": access_token, "clientToken": client_token });
+        self.post_json(&format!("{base}/authserver/refresh"), body)
+            .await
+    }
+
+    // ---- Mirror 账号面（玩家级端点）----
+    //
+    // 这些端点用启动器会话的 accessToken 作 Bearer。mirror 侧已按玩家收窄（ADR-0012）：
+    // 启动器会话只能读写它钉住的那一个玩家，越界是 404。所以这里一律传**当前账号自己的**
+    // 玩家名——把名字做成参数而不是从会话推，是因为启动器本来就按账号组织身份。
+
+    /// 列出当前玩家的启动器独立密码。只有元数据，永不含哈希或明文。
+    pub async fn list_credentials(
+        &self,
+        base: &str,
+        token: &str,
+        player: &str,
+    ) -> Result<Vec<PlayerCredential>, Error> {
+        let url = join_path(base, &["account", "players", player, "credentials"])?;
+        let res = self.http.get(url).bearer_auth(token).send().await?;
+        #[derive(Deserialize)]
+        struct Body {
+            #[serde(default)]
+            credentials: Vec<PlayerCredential>,
+        }
+        Ok(self.json_or_error::<Body>(res).await?.credentials)
+    }
+
+    /// 为当前玩家新增一条独立密码。
+    ///
+    /// **明文只在这一次调用里存在**：不落盘、不进日志、不回显（mirror 也不回显）。
+    /// 前端要配套：输入框用 password 类型，提交后立刻清掉那个 state。
+    pub async fn create_credential(
+        &self,
+        base: &str,
+        token: &str,
+        player: &str,
+        label: &str,
+        password: &str,
+    ) -> Result<PlayerCredential, Error> {
+        let url = join_path(base, &["account", "players", player, "credentials"])?;
+        let body = serde_json::json!({ "name": label, "password": password });
+        let res = self
+            .http
+            .post(url)
+            .bearer_auth(token)
+            .json(&body)
+            .send()
+            .await?;
+        self.json_or_error(res).await
+    }
+
+    /// 撤销一条独立密码。由它建立的会话经外键级联**立即**失效——如果撤的正是当前会话
+    /// 所由建立的那一条，启动器自己就会掉线。启动器无从知道是哪一条（认证响应里不带
+    /// credential id），所以这是 UI 必须提前说明的后果，而不是能在客户端拦下的错误。
+    pub async fn delete_credential(
+        &self,
+        base: &str,
+        token: &str,
+        player: &str,
+        credential_id: &str,
+    ) -> Result<(), Error> {
+        let url = join_path(
+            base,
+            &["account", "players", player, "credentials", credential_id],
+        )?;
+        let res = self.http.delete(url).bearer_auth(token).send().await?;
+        match res.status().as_u16() {
+            204 => Ok(()),
+            status => Err(api_error(status, &res.text().await.unwrap_or_default())),
+        }
+    }
+
     // ---- Hoard ----
 
     pub async fn hoard_search(
@@ -253,6 +337,59 @@ pub struct AuthenticateResponse {
     #[serde(default)]
     pub available_profiles: Vec<Player>,
     pub selected_profile: Option<Player>,
+}
+
+/// `/authserver/refresh` 的响应。只声明用得到的字段。
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RefreshResponse {
+    pub access_token: String,
+    pub client_token: String,
+    #[serde(default)]
+    pub selected_profile: Option<Player>,
+}
+
+/// 一条启动器独立密码的元数据。**没有 password 字段**，因为 mirror 永不返回哈希或明文。
+///
+/// 这是 mirror 账号面端点的**线上形状**，字段是 snake_case（与 Yggdrasil 协议端点的
+/// camelCase 不同）。不做重命名：改了就读不进来了。给前端的是 `CredentialView`
+/// ——与 `Account`/`AccountView` 同一个分法，免得前端表面混进一种命名约定。
+#[derive(Debug, Clone, PartialEq, Deserialize)]
+pub struct PlayerCredential {
+    pub id: String,
+    /// 用户给的标签（如"台式机"），只为在列表里区分多条，不参与认证。
+    pub name: String,
+    pub created_at: String,
+    /// 服务端 `omitempty`：从未用过的凭证没有这个字段。
+    #[serde(default)]
+    pub last_used_at: String,
+}
+
+impl PlayerCredential {
+    pub fn view(&self) -> CredentialView {
+        CredentialView {
+            id: self.id.clone(),
+            name: self.name.clone(),
+            created_at: self.created_at.clone(),
+            // 空串（"从未使用"）转成 None，前端不必自己判断空串
+            last_used_at: if self.last_used_at.is_empty() {
+                None
+            } else {
+                Some(self.last_used_at.clone())
+            },
+        }
+    }
+}
+
+/// 交给前端的独立密码视图（camelCase，与 ipc.ts 的其余部分一致）。
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CredentialView {
+    pub id: String,
+    pub name: String,
+    pub created_at: String,
+    /// None = 从未用过
+    pub last_used_at: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -474,5 +611,81 @@ mod tests {
             !list[0].files[1].hashes.contains_key("sha1"),
             "空 hashes 里没有 sha1，不是空串——两者在下载器里含义不同"
         );
+    }
+
+    /// 独立密码列表的线上形状。**账号面端点是 snake_case**，与 Yggdrasil 协议端点的
+    /// camelCase 不同——两个都来自 mirror，但一个是账号 API、一个是协议实现。
+    /// 按 camelCase 声明的话这里会解码失败，而症状是"列表永远是空的"。
+    #[test]
+    fn credential_list_parses_the_account_api_snake_case_shape() {
+        let body = r#"{
+            "credentials": [
+                {"id": "c1", "name": "台式机", "created_at": "2026-10-01T08:00:00Z",
+                 "last_used_at": "2026-10-29T19:30:00Z"},
+                {"id": "c2", "name": "笔记本", "created_at": "2026-10-20T08:00:00Z"}
+            ]
+        }"#;
+        #[derive(Deserialize)]
+        struct Body {
+            #[serde(default)]
+            credentials: Vec<PlayerCredential>,
+        }
+        let parsed: Body = serde_json::from_str(body).unwrap();
+        assert_eq!(parsed.credentials.len(), 2);
+        assert_eq!(parsed.credentials[0].name, "台式机");
+        assert_eq!(parsed.credentials[0].last_used_at, "2026-10-29T19:30:00Z");
+        // 服务端 omitempty：从未用过的凭证整个键都不在，不能解码失败
+        assert_eq!(parsed.credentials[1].last_used_at, "");
+
+        // 给前端的视图：空串（"从未使用"）转成 null，前端不必自己判断空串；
+        // 命名约定也跟着换回 camelCase，与 ipc.ts 的其余部分一致
+        let view = parsed.credentials[1].view();
+        assert_eq!(view.last_used_at, None);
+        assert_eq!(
+            parsed.credentials[0].view().last_used_at.as_deref(),
+            Some("2026-10-29T19:30:00Z")
+        );
+        let json = serde_json::to_string(&view).unwrap();
+        assert!(json.contains("createdAt"), "视图应当是 camelCase：{json}");
+        assert!(
+            !json.contains("password"),
+            "视图里不该有任何密码字段：{json}"
+        );
+    }
+
+    /// 空列表的形状：mirror 返回 `{"credentials": []}`，而不是裸的 `[]`。
+    #[test]
+    fn an_account_without_credentials_is_an_empty_list_not_an_error() {
+        #[derive(Deserialize)]
+        struct Body {
+            #[serde(default)]
+            credentials: Vec<PlayerCredential>,
+        }
+        let parsed: Body = serde_json::from_str(r#"{"credentials": []}"#).unwrap();
+        assert!(parsed.credentials.is_empty());
+        // 键整个缺失也要能解码（`#[serde(default)]`）：一个新账号还没有任何独立密码
+        let parsed: Body = serde_json::from_str("{}").unwrap();
+        assert!(parsed.credentials.is_empty());
+    }
+
+    /// `/authserver/refresh` 的响应。协议端点，camelCase。
+    /// 轮换会**换掉 accessToken**，所以这个字段必须是必填而不是 Option——
+    /// 声明成 Option 的话，一个漏了它的响应会被静默当成"没有新令牌"。
+    #[test]
+    fn refresh_response_carries_the_replacement_token() {
+        let body = r#"{
+            "accessToken": "new-access",
+            "clientToken": "same-client",
+            "selectedProfile": {"id": "uuid-1", "name": "Alice"}
+        }"#;
+        let resp: RefreshResponse = serde_json::from_str(body).unwrap();
+        assert_eq!(resp.access_token, "new-access");
+        assert_eq!(resp.client_token, "same-client");
+        assert_eq!(resp.selected_profile.unwrap().name, "Alice");
+
+        // selectedProfile 是可选的（mirror 只在请求里带了 selectedProfile 或能查到玩家时给）
+        let minimal = r#"{"accessToken": "a", "clientToken": "c"}"#;
+        let resp: RefreshResponse = serde_json::from_str(minimal).unwrap();
+        assert!(resp.selected_profile.is_none());
     }
 }

@@ -112,6 +112,113 @@ pub fn offline_account() -> compass_lib::account::Account {
         client_token: "0".repeat(32),
         api_url: "https://mc.example.com".into(),
         signed_in_at: 0,
+        token_obtained_at: 0,
         kind: compass_lib::account::AccountKind::Yggdrasil,
+    }
+}
+
+/// 一次真启动的结果。
+pub struct RunOutcome {
+    /// 进程退出码；被我们杀掉的（命中标记或超时）为 `None`。
+    /// 用 `Option<Option<i32>>` 会更精确但没人需要——被杀掉时我们不关心码。
+    pub exit: Option<i32>,
+    pub lines: Vec<String>,
+    pub elapsed: std::time::Duration,
+    /// 命中的停止标记（若有）
+    pub stopped_at: Option<String>,
+}
+
+impl RunOutcome {
+    /// 末尾 n 行，用于失败信息（整份日志几千行，打印出来没人看）
+    pub fn tail(&self, n: usize) -> String {
+        let skip = self.lines.len().saturating_sub(n);
+        self.lines[skip..].join("\n")
+    }
+
+    pub fn contains(&self, needle: &str) -> bool {
+        self.lines.iter().any(|l| l.contains(needle))
+    }
+
+    /// 落盘一份完整日志，便于失败后离线看（CI 的 stdout 会被截断）
+    pub fn save(&self, path: &Path) {
+        if let Some(parent) = path.parent() {
+            std::fs::create_dir_all(parent).ok();
+        }
+        std::fs::write(path, self.lines.join("\n")).ok();
+    }
+}
+
+/// 启动一个计划，边收输出边等：命中 `stop_at` 里任一标记、进程自己退出、或超过
+/// `limit`，三者先到为准。之后一律杀进程。
+///
+/// **不能等进程自己退**：这台机器可能有显示服务，游戏会真开一个窗口一直跑下去。
+/// stdout 与 stderr 是两个不同的类型，只能各自 spawn 一个 pump（合并进一个数组编不过）。
+pub async fn run_and_capture(
+    plan: &compass_lib::launch::LaunchPlan,
+    limit: std::time::Duration,
+    stop_at: &[&str],
+) -> RunOutcome {
+    use std::sync::{Arc, Mutex};
+
+    let mut child = compass_lib::launch::spawn(plan).await.unwrap();
+    let log = Arc::new(Mutex::new(Vec::<String>::new()));
+    if let Some(stream) = child.stdout.take() {
+        let sink = Arc::clone(&log);
+        tokio::spawn(pump_lines(stream, sink));
+    }
+    if let Some(stream) = child.stderr.take() {
+        let sink = Arc::clone(&log);
+        tokio::spawn(pump_lines(stream, sink));
+    }
+
+    let started = std::time::Instant::now();
+    let mut stopped_at: Option<String> = None;
+    let mut exit: Option<i32> = None;
+    while started.elapsed() < limit {
+        {
+            let lines = log.lock().unwrap();
+            if let Some(hit) = lines.iter().find_map(|l| {
+                stop_at
+                    .iter()
+                    .find(|m| l.contains(*m))
+                    .map(|m| m.to_string())
+            }) {
+                stopped_at = Some(hit);
+            }
+        }
+        if stopped_at.is_some() {
+            break;
+        }
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                exit = status.code();
+                break;
+            }
+            Ok(None) => {}
+            Err(e) => panic!("wait failed: {e}"),
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+    }
+    let _ = child.kill().await;
+    // 杀完之后 pump 还会把管道里剩下的读出来，给它一点时间，否则最后几行
+    // （往往正是崩溃原因）会丢
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+
+    RunOutcome {
+        exit,
+        lines: log.lock().unwrap().clone(),
+        elapsed: started.elapsed(),
+        stopped_at,
+    }
+}
+
+async fn pump_lines<R>(stream: R, sink: std::sync::Arc<std::sync::Mutex<Vec<String>>>)
+where
+    R: tokio::io::AsyncRead + Unpin + Send + 'static,
+{
+    use tokio::io::AsyncBufReadExt;
+    let mut lines = tokio::io::BufReader::new(stream).lines();
+    while let Ok(Some(line)) = lines.next_line().await {
+        sink.lock().unwrap().push(line);
     }
 }

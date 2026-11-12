@@ -12,6 +12,7 @@ use serde::Serialize;
 
 use crate::assets::{self, AssetIndex};
 use crate::error::Error;
+use crate::logconfig;
 use crate::meta::MetaClient;
 use crate::net::{Downloader, FileTask, ProgressSink, Summary, format_failures};
 use crate::paths::{Paths, safe_join};
@@ -116,15 +117,11 @@ impl Installer {
             });
         }
 
-        // 日志配置（Log4Shell 之后必须显式传 -Dlog4j.configurationFile）
-        if let Some(logging) = merged.logging.as_ref().and_then(|l| l.client.as_ref()) {
-            tasks.push(FileTask {
-                url: logging.file.url.clone(),
-                dest: safe_join(&self.version_dir(id), &logging.file.id)?,
-                sha1: logging.file.sha1.clone(),
-                size: logging.file.size,
-            });
-        }
+        // 日志配置**不在下载计划里**：Mojang 的 `logging.client.file` 用
+        // `<LegacyXMLLayout />`，会让 stdout 变成 XML/CDATA，而它写 logs/latest.log
+        // 用的是纯文本——同一个进程两种形状。我们生成自己的纯文本版本（见 logconfig），
+        // 于是实时输出、归档日志与崩溃报告共用一个解析器。生成物没有"来源 sha1"可校验，
+        // 所以它走 install_merged 里的写入，不走下载器。
 
         // 资源索引本身也是一个要校验的文件
         if let Some(index) = &merged.asset_index {
@@ -149,7 +146,8 @@ impl Installer {
         progress: Option<ProgressSink>,
     ) -> Result<InstalledVersion, Error> {
         validate_version_id(id)?;
-        let manifest = self.meta.manifest().await?;
+        // 走带条件请求的缓存：清单 1MB+，而内容几天才变一次
+        let manifest = self.meta.manifest_cached(&self.paths).await?;
         let entry = manifest
             .by_id(id)
             .ok_or_else(|| Error::Invalid(format!("unknown version: {id}")))?
@@ -191,6 +189,10 @@ impl Installer {
             &plan.version_file,
             serde_json::to_vec_pretty(&merged).map_err(|e| Error::Config(e.to_string()))?,
         )?;
+        // 日志配置（Log4Shell 之后必须显式传 -Dlog4j.configurationFile）。
+        // 内容是我们生成的纯文本布局，不下载 Mojang 那份——理由见 logconfig 模块头。
+        // 只对声明了 logging.client 的版本写；老版本用游戏内置配置，控制台本来就是纯文本。
+        logconfig::write(&self.version_dir(id), &merged)?;
 
         let mut summary = self.dl.download_all(plan.tasks, progress.clone()).await;
         if !summary.failed.is_empty() {
@@ -380,11 +382,12 @@ mod tests {
             assert!(t.url.starts_with("http"), "{:?}", t.url);
         }
 
-        // 日志配置：文件名来自 logging.client.file.id
+        // 日志配置**不在**下载计划里：它由我们生成（纯文本控制台布局），
+        // 不下载 Mojang 那份 XML 布局的配置——见 logconfig 模块头
         assert!(
-            plan.tasks
-                .iter()
-                .any(|t| t.dest.ends_with("client-1.21.2.xml"))
+            !plan.tasks.iter().any(|t| t.dest.ends_with(".xml")),
+            "Mojang 的 log4j2 配置不该再进下载计划：{:?}",
+            plan.tasks.iter().map(|t| &t.dest).collect::<Vec<_>>()
         );
         // 资源索引本身也要下载并校验
         let index = plan

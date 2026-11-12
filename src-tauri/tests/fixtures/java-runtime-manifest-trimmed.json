@@ -1,0 +1,61 @@
+{
+  "files": {
+    "bin/java.exe": {
+      "downloads": {
+        "lzma": {
+          "sha1": "b4d610f2cc9d12d2b9907622eecdc1833d441551",
+          "size": 14407,
+          "url": "https://piston-data.mojang.com/v1/objects/b4d610f2cc9d12d2b9907622eecdc1833d441551/java.exe"
+        },
+        "raw": {
+          "sha1": "38dc560c6ff23b550a9df5b79a7de0d852e6f840",
+          "size": 39424,
+          "url": "https://piston-data.mojang.com/v1/objects/38dc560c6ff23b550a9df5b79a7de0d852e6f840/java.exe"
+        }
+      },
+      "executable": true,
+      "type": "file"
+    },
+    "lib/modules": {
+      "downloads": {
+        "raw": {
+          "sha1": "e8fba4c7ae588fdc6562f4e02d638b4d5e8ac524",
+          "size": 61880399,
+          "url": "https://piston-data.mojang.com/v1/objects/e8fba4c7ae588fdc6562f4e02d638b4d5e8ac524/modules"
+        }
+      },
+      "executable": false,
+      "type": "file"
+    },
+    "release": {
+      "downloads": {
+        "lzma": {
+          "sha1": "5bcb1355c5f1e2cddf3c20f40feeccc89a562369",
+          "size": 485,
+          "url": "https://piston-data.mojang.com/v1/objects/5bcb1355c5f1e2cddf3c20f40feeccc89a562369/release"
+        },
+        "raw": {
+          "sha1": "c677dfdb8e7ac26ad06c5d224d52c325f51ceb66",
+          "size": 1069,
+          "url": "https://piston-data.mojang.com/v1/objects/c677dfdb8e7ac26ad06c5d224d52c325f51ceb66/release"
+        }
+      },
+      "executable": false,
+      "type": "file"
+    },
+    "legal": {
+      "type": "directory"
+    },
+    "lib/jrt-fs.jar": {
+      "downloads": {
+        "raw": {
+          "sha1": "e6572ec544cb4f25fe82f8fc4b14bd4fb3198edc",
+          "size": 110116,
+          "url": "https://piston-data.mojang.com/v1/objects/e6572ec544cb4f25fe82f8fc4b14bd4fb3198edc/jrt-fs.jar"
+        }
+      },
+      "executable": false,
+      "type": "file"
+    }
+  }
+}

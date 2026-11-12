@@ -26,19 +26,25 @@ struct Shape {
 
 /// 所有可能跨 IPC 的 Rust 结构体所在的文件。漏一个文件 = 那个文件里的结构体不被检查，
 /// 所以 `every_listed_rust_file_is_parsed` 会盯着这份清单本身。
-const RUST_FILES: [&str; 16] = [
+// 只列**带前端载荷**的文件：runner/assets/authlibinjector/forge/session 里一个
+// `Serialize` 都没有，列进去是空转。哪天某个文件第一次出现可序列化的形状，就把它加进来。
+const RUST_FILES: [&str; 20] = [
     "src/account.rs",
     "src/api.rs",
     "src/archive.rs",
+    "src/cli.rs",
     "src/commands.rs",
     "src/config.rs",
     "src/content.rs",
+    "src/diagnose.rs",
     "src/install.rs",
     "src/instance.rs",
     "src/java.rs",
+    "src/javaget.rs",
     "src/launch.rs",
     "src/loader.rs",
     "src/meta.rs",
+    "src/logs.rs",
     "src/modpack.rs",
     "src/net.rs",
     "src/paths.rs",
@@ -46,40 +52,51 @@ const RUST_FILES: [&str; 16] = [
 ];
 
 /// 两侧名字不同但描述同一个载荷。
-const ALIASES: [(&str, &str); 6] = [
+const ALIASES: [(&str, &str); 7] = [
     ("Summary", "DownloadSummary"),
     ("Download", "DownloadConfig"),
     ("SearchResponse", "SearchResult"),
     ("Project", "HoardProject"),
     ("Version", "HoardVersion"),
     ("File", "HoardFile"),
+    ("Intent", "CliIntent"),
 ];
 
 /// 必须被比对到的形状。少了这条，某次重命名会让一个载荷悄悄从门里消失。
-const MUST_COMPARE: [&str; 36] = [
+const MUST_COMPARE: [&str; 46] = [
     "AccountEntry",
     "AccountsView",
     "AccountView",
     "ArchiveInfo",
+    "AuthCheckView",
     "Config",
     "Conflict",
     "ContentItem",
     "ContentListing",
     "ContentStats",
     "CopyProgress",
+    "CredentialView",
     "Defaults",
     "DependencyReport",
+    "Diagnosis",
     "Download",
     "FileProgress",
+    "Finding",
     "GameExit",
     "Instance",
+    "Intent",
     "InstanceLoader",
     "InstanceSettings",
+    "InstalledJava",
     "InstalledVersion",
+    "JavaOffer",
+    "JavaOverview",
     "JavaRuntime",
     "LaunchInfo",
     "LoaderVersion",
+    "LogArchive",
     "LogLine",
+    "LogText",
     "ManifestEntry",
     "MissingDep",
     "ModDep",

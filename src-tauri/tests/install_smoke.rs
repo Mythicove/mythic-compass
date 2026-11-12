@@ -20,9 +20,50 @@ use compass_lib::loader::LoaderKind;
 use compass_lib::meta::MetaClient;
 use compass_lib::net::Downloader;
 use compass_lib::paths::Paths;
-use compass_lib::version::{OsInfo, VersionJson};
+use compass_lib::version::{ArgItem, OsInfo, VersionJson};
 
 const VERSION: &str = "1.21.4";
+
+/// 断言子版本自己声明的每条**字面**参数都出现在最终命令行里，返回比对了几条。
+///
+/// 盯的是 P1 修过的那类 bug：继承型版本按"子覆盖父"合并时，子版本那一条
+/// `-DFabricMcEmu=` 会把父版本整组 JVM 参数挤掉，症状是命令行里既没有
+/// `-Djava.library.path` 也没有 `-cp`。
+///
+/// 这条断言**不需要显示环境**，所以 CI 三平台每次都跑得到。真启动只能本地验一次，
+/// 覆盖不了回归——凡是能把"启动才会暴露"的问题拉回到这一层的断言，都该拉回来。
+///
+/// 返回计数而不是断言"至少一条"：子版本完全可以一条都不声明（实测 Quilt 的
+/// `arguments.jvm` 就是空的），那时这条断言对它是空转的，该由调用方说出来，
+/// 而不是让一个恒真的断言假装覆盖到了。
+fn assert_declared_args_survive(declared: &[ArgItem], args: &[String], what: &str) -> usize {
+    let mut literal = 0usize;
+    for item in declared {
+        // 带 rules 的条目要看平台是否命中，逐字比对会在另一个平台上假红
+        let ArgItem::Plain(arg) = item else {
+            continue;
+        };
+        // 带占位符的会被替换掉，逐字比对没有意义；"不残留 ${" 由调用方单独断言
+        if arg.contains("${") {
+            continue;
+        }
+        literal += 1;
+        assert!(
+            args.iter().any(|a| a == arg),
+            "{what} 子版本声明的参数 {arg:?} 没出现在命令行里（合并把它吃了）：{args:?}"
+        );
+    }
+    literal
+}
+
+/// 一个继承型版本的 `arguments` 段（可能整个缺失）。
+fn declared_args(v: &VersionJson) -> (Vec<ArgItem>, Vec<ArgItem>) {
+    let a = v.arguments.as_ref();
+    (
+        a.and_then(|a| a.jvm.clone()).unwrap_or_default(),
+        a.map(|a| a.game.clone()).unwrap_or_default(),
+    )
+}
 
 #[tokio::test]
 #[ignore = "needs network and ~550MB of downloads"]
@@ -319,6 +360,7 @@ async fn installs_a_real_version_and_produces_a_consistent_launch_plan() {
         client_token: "0".repeat(32),
         api_url: "https://mc.example.com".into(),
         signed_in_at: 0,
+        token_obtained_at: 0,
         kind: compass_lib::account::AccountKind::Yggdrasil,
     };
     let plan = compass_lib::runner::build(&compass_lib::runner::LaunchInput {
@@ -378,9 +420,29 @@ async fn installs_a_real_version_and_produces_a_consistent_launch_plan() {
         "unsubstituted placeholder: {:?}",
         plan.args
     );
+    // 上面那条 `-DFabricMcEmu=` 是这条通用断言的一个特例（P1 当时就是它被吃掉的）。
+    // 保留特例是因为它的失败信息更直白；通用这条才覆盖得住 loader 以后新增的参数。
+    let fabric_profile =
+        compass_lib::loader::profile(&api, LoaderKind::Fabric, VERSION, &chosen.version)
+            .await
+            .unwrap();
+    let (fabric_jvm, fabric_game) = declared_args(&fabric_profile);
+    let fabric_jvm_literal = assert_declared_args_survive(&fabric_jvm, &plan.args, "Fabric JVM");
+    assert_declared_args_survive(&fabric_game, &plan.args, "Fabric game");
+    // Fabric 确实声明了子版本 JVM 参数（`-DFabricMcEmu=`）。把这个事实写死，是为了让
+    // "某天 profile 形状变了、这条断言悄悄退化成空转"变成一次失败，而不是一次假绿。
+    assert!(
+        fabric_jvm_literal > 0,
+        "Fabric 应当声明至少一条字面 JVM 参数，实际是 {fabric_jvm:?}"
+    );
 
-    // 8. Quilt：同一个实现、另一个 meta 服务。这里只验端点与 profile 形状，
-    //    不重复一遍完整安装（下载与合并的代码路径与 Fabric 完全相同）。
+    // 8. Quilt：真装一遍并检查启动计划。
+    //
+    //    此前这一步只验"端点通、profile 形状对"，理由是"下载与合并的代码路径与 Fabric
+    //    完全相同"。那句话对**代码**成立，对**数据**不成立：Quilt 的 profile 带 Fabric
+    //    没有的 `hashed` 依赖，库集也不同，而"少下一个 jar"这类问题只有在真下载、
+    //    真合并、真拼命令行之后才看得见（JVM 抛的是 ClassNotFoundException，
+    //    离原因很远）。既然 P3 的验收写着 Quilt 要能装出并启动，这一步就该和 Fabric 同规格。
     let quilt_versions = compass_lib::loader::versions(&api, LoaderKind::Quilt, VERSION)
         .await
         .unwrap();
@@ -395,33 +457,126 @@ async fn installs_a_real_version_and_produces_a_consistent_launch_plan() {
         "Quilt 的 stable 应当全是 None：{:?}",
         quilt_versions.iter().take(3).collect::<Vec<_>>()
     );
+    let quilt = compass_lib::loader::install(
+        &installer,
+        &api,
+        LoaderKind::Quilt,
+        VERSION,
+        &quilt_versions[0].version,
+        None,
+    )
+    .await
+    .unwrap();
+    println!(
+        "quilt installed: id={} jar={} main={} libs downloaded={} skipped={}",
+        quilt.id,
+        quilt.jar_version,
+        quilt.main_class,
+        quilt.download.downloaded,
+        quilt.download.skipped
+    );
+    assert!(
+        quilt.id.starts_with("quilt-loader-"),
+        "profile 的 id 应当是 loader 生成的形状：{}",
+        quilt.id
+    );
+    assert_eq!(
+        quilt.jar_version, VERSION,
+        "client jar 来自父版本（继承型版本自己不带 jar）"
+    );
+    assert!(
+        quilt.main_class.contains("quiltmc"),
+        "合并后主类应当是 Quilt 的 Knot：{}",
+        quilt.main_class
+    );
+
+    let quilt_json = compass_lib::runner::installed_version_path(&paths, &quilt.id);
+    assert!(quilt_json.is_file(), "{} 没落盘", quilt_json.display());
+    let merged_quilt = compass_lib::runner::read_installed_version(&paths, &quilt.id).unwrap();
+    assert_eq!(
+        merged_quilt.inherits_from.as_deref(),
+        Some(VERSION),
+        "合并结果应当仍指向提供 jar 的父版本"
+    );
+    assert_eq!(merged_quilt.jar_version(), VERSION);
+
+    let quilt_inst = compass_lib::instance::Instance {
+        slug: "smoke-quilt".into(),
+        name: "Smoke Quilt".into(),
+        version_id: quilt.id.clone(),
+        memory_mb: Some(2048),
+        ..compass_lib::instance::Instance::default()
+    };
+    compass_lib::instance::save(&paths, &quilt_inst).unwrap();
+    let quilt_plan = compass_lib::runner::build(&compass_lib::runner::LaunchInput {
+        instance: &quilt_inst,
+        account: &fake_account,
+        version: &merged_quilt,
+        os: &OsInfo::current(),
+        paths: &paths,
+        default_memory_mb: 2048,
+        api_url: "https://mc.example.com",
+        java: java_path(),
+        authlib_jar: None,
+        prefetched_meta: None,
+    })
+    .unwrap();
+    assert!(
+        quilt_plan.args.iter().any(|a| a.contains("quiltmc")),
+        "主类应当是 Quilt 的 Knot：{:?}",
+        quilt_plan.args
+    );
+    assert!(
+        quilt_plan
+            .args
+            .iter()
+            .any(|a| a.starts_with("-Djava.library.path=")),
+        "父版本的 JVM 参数被子版本覆盖了：{:?}",
+        quilt_plan.args
+    );
+    let quilt_cp_idx = quilt_plan
+        .args
+        .iter()
+        .position(|a| a == "-cp")
+        .expect("合并后必须有 -cp");
+    let quilt_cp = &quilt_plan.args[quilt_cp_idx + 1];
+    assert!(
+        quilt_cp.contains("quilt-loader"),
+        "classpath 里应当有 quilt-loader：{quilt_cp}"
+    );
+    // 与 Fabric 同一条强断言：classpath 上每一项都得真在磁盘上。
+    // 这一条才是"Quilt 那些 Fabric 没有的依赖也下全了"的证据。
+    for entry in quilt_cp.split(sep) {
+        assert!(
+            PathBuf::from(entry).is_file(),
+            "quilt classpath entry missing: {entry}"
+        );
+    }
+    assert!(
+        !quilt_plan.args.iter().any(|a| a.contains("${")),
+        "unsubstituted placeholder: {:?}",
+        quilt_plan.args
+    );
+
+    // 子版本自己声明的参数一条都不能少（与 Fabric 共用同一个辅助函数）
     let quilt_profile =
         compass_lib::loader::profile(&api, LoaderKind::Quilt, VERSION, &quilt_versions[0].version)
             .await
             .unwrap();
-    assert_eq!(
-        quilt_profile.inherits_from.as_deref(),
-        Some(VERSION),
-        "Quilt profile 的父版本应当是游戏版本"
-    );
-    assert!(
-        quilt_profile.id.starts_with("quilt-loader-"),
-        "{}",
-        quilt_profile.id
-    );
-    assert!(
-        quilt_profile
-            .main_class
-            .as_deref()
-            .is_some_and(|m| m.contains("quiltmc")),
-        "主类应当是 Quilt 的 Knot：{:?}",
-        quilt_profile.main_class
-    );
+    let (quilt_jvm, quilt_game) = declared_args(&quilt_profile);
+    let quilt_jvm_literal = assert_declared_args_survive(&quilt_jvm, &quilt_plan.args, "Quilt JVM");
+    let quilt_game_literal =
+        assert_declared_args_survive(&quilt_game, &quilt_plan.args, "Quilt game");
+    // 实测 Quilt 的 profile **一条 JVM 参数都不声明**（`arguments.jvm` 是空的），
+    // 于是合并结果里的 JVM 参数全部来自父版本——对 Quilt 真正有效的覆盖是上面那两条
+    // `-Djava.library.path=` 与 `-cp`（含"classpath 每一项都在磁盘上"）的断言。
+    // 把计数打出来，免得下一个人以为这条断言在 Quilt 上验到了什么。
     println!(
-        "quilt ok: {} loader versions, profile {} (libs {})",
-        quilt_versions.len(),
-        quilt_profile.id,
-        quilt_profile.libraries.len()
+        "quilt declares {} literal jvm args (declared {}), {} literal game args (declared {})",
+        quilt_jvm_literal,
+        quilt_jvm.len(),
+        quilt_game_literal,
+        quilt_game.len()
     );
 
     // 9. 可选：真的把游戏拉起来，启动的是**导入出来的**实例（验收项：导出再导入可正常启动）。
@@ -460,6 +615,7 @@ async fn installs_a_real_version_and_produces_a_consistent_launch_plan() {
                 client_token: resp.client_token,
                 api_url: cfg.api_url.clone(),
                 signed_in_at: 0,
+                token_obtained_at: 0,
                 kind: compass_lib::account::AccountKind::Yggdrasil,
             }
         }
@@ -470,11 +626,12 @@ async fn installs_a_real_version_and_produces_a_consistent_launch_plan() {
             client_token: "0".repeat(32),
             api_url: cfg.api_url.clone(),
             signed_in_at: 0,
+            token_obtained_at: 0,
             kind: compass_lib::account::AccountKind::Yggdrasil,
         },
     };
 
-    let prepared = compass_lib::runner::prepare_launch(&paths, &http, &cfg, &inst, &account)
+    let prepared = compass_lib::runner::prepare_launch(&paths, &http, &cfg, &inst, &account, None)
         .await
         .unwrap();
     assert!(

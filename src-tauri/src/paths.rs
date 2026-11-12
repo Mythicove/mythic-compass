@@ -161,6 +161,26 @@ pub struct PathsInfo {
 mod tests {
     use super::*;
 
+    /// 便携模式由"可执行文件旁边有没有那个标记文件"决定，与 exe 装在哪无关。
+    #[test]
+    fn portable_mode_is_decided_by_a_marker_file_next_to_the_executable() {
+        let dir = tempfile::tempdir().unwrap();
+        let marker = dir.path().join(PORTABLE_MARKER);
+
+        // 没有标记文件 → 不便携
+        assert_eq!(portable_root(&marker), None);
+
+        // 空文件就算（内容不重要）
+        std::fs::write(&marker, b"").unwrap();
+        assert_eq!(portable_root(&marker), Some(dir.path().join("data")));
+
+        // 是个**目录**而不是文件时不算：一个叫 portable.txt 的目录几乎肯定是误操作，
+        // 而据此改变数据目录会让用户以为数据丢了
+        std::fs::remove_file(&marker).unwrap();
+        std::fs::create_dir_all(&marker).unwrap();
+        assert_eq!(portable_root(&marker), None);
+    }
+
     #[test]
     fn layout_is_rooted_and_shared() {
         let p = Paths::new("/tmp/compass-test");

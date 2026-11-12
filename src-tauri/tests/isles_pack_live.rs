@@ -129,7 +129,7 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         api_url: origin,
         ..config::Config::default()
     };
-    let prepared = runner::prepare_launch(&paths, &http, &cfg, &inst, &account)
+    let prepared = runner::prepare_launch(&paths, &http, &cfg, &inst, &account, None)
         .await
         .unwrap();
     assert_eq!(prepared.java_version, 21);

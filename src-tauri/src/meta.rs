@@ -83,7 +83,53 @@ pub fn merge_step(parent: VersionJson, child: VersionJson) -> (VersionJson, Opti
     (merged, next)
 }
 
-/// 元数据客户端：只读 JSON，不落盘（缓存由调用方按 `paths` 布局决定）。
+/// 缓存一份 HTTP 响应所需的条件请求校验子。
+///
+/// 两个都存：有的服务器只给 `ETag`，有的只给 `Last-Modified`，
+/// 而只带一个的话另一台镜像上缓存就永远不命中。
+#[derive(Debug, Clone, Default, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct Validators {
+    #[serde(default)]
+    etag: String,
+    #[serde(default)]
+    last_modified: String,
+}
+
+fn header(res: &reqwest::Response, name: &str) -> String {
+    res.headers()
+        .get(name)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or_default()
+        .to_string()
+}
+
+/// 解析成功之后才落盘，且落盘失败不影响返回结果（缓存是优化，写不进去不该让"列版本"失败）。
+///
+/// 顺序不能反：把一份解析不了的清单缓存下来，之后每次启动都会拿它当"没变"
+/// （304 永远命中），症状是版本列表停在某一天，而且这个状态自己修不好。
+fn store_manifest(
+    body_file: &std::path::Path,
+    validator_file: &std::path::Path,
+    text: &str,
+    validators: &Validators,
+) -> Result<VersionManifest, Error> {
+    let parsed: VersionManifest = serde_json::from_str(text)
+        .map_err(|e| Error::Config(format!("decode {VERSION_MANIFEST_URL}: {e}")))?;
+    if let Some(parent) = body_file.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let _ = std::fs::write(body_file, text);
+    let _ = std::fs::write(
+        validator_file,
+        serde_json::to_vec(validators).unwrap_or_default(),
+    );
+    Ok(parsed)
+}
+
+/// 元数据客户端：默认只读 JSON、不落盘（缓存由调用方按 `paths` 布局决定）。
+/// 唯一的例外是 `manifest_cached`——版本清单够大、变得够慢，值得自己管一份带
+/// 条件请求的缓存；它要 `Paths`，所以不影响其余方法的无状态性。
 #[derive(Clone)]
 pub struct MetaClient {
     http: reqwest::Client,
@@ -119,6 +165,93 @@ impl MetaClient {
 
     pub async fn manifest(&self) -> Result<VersionManifest, Error> {
         self.json(VERSION_MANIFEST_URL).await
+    }
+
+    /// 带 ETag / Last-Modified 的版本清单。
+    ///
+    /// 清单 1MB 以上，而"列版本""装版本""装 loader"每次都要取一遍；它的内容几天才变一次。
+    /// 条件请求命中 304 时一个字节正文都不用下——这对启动时间与弱网都有感。
+    ///
+    /// 三条退化路径都是刻意的，而且都退到"和没有缓存时一样"，不退到"用一个坏缓存"：
+    /// - 服务端不给 ETag/Last-Modified（部分镜像如此）→ 每次全量取，行为与从前相同。
+    /// - 304 但磁盘上那份读不出来或解析不了 → 重新全量取一次。缓存坏了不该让启动器不能用。
+    /// - 200 但正文解析失败 → **不落盘**，直接报错。把一份坏清单缓存下来，
+    ///   会让之后每次启动都拿它当"没变"，症状是版本列表停在某一天。
+    ///
+    /// 信任根不在这里：清单自身没有 sha1，但每个条目的版本 JSON 有，
+    /// 而 `version_for` 会先对字节核 sha1 再解析（见它的注释）。
+    pub async fn manifest_cached(
+        &self,
+        paths: &crate::paths::Paths,
+    ) -> Result<VersionManifest, Error> {
+        use std::fs;
+
+        let body_file = paths.cache().join("version_manifest.json");
+        let validator_file = paths.cache().join("version_manifest.validators.json");
+        let validators = fs::read_to_string(&validator_file)
+            .ok()
+            .and_then(|t| serde_json::from_str::<Validators>(&t).ok())
+            .unwrap_or_default();
+
+        let mut req = self
+            .http
+            .get(rewrite_mirror(VERSION_MANIFEST_URL, &self.mirror));
+        if !validators.etag.is_empty() {
+            req = req.header("If-None-Match", &validators.etag);
+        }
+        if !validators.last_modified.is_empty() {
+            req = req.header("If-Modified-Since", &validators.last_modified);
+        }
+        let res = req.send().await?;
+        let status = res.status().as_u16();
+
+        if status == 304 {
+            if let Ok(text) = fs::read_to_string(&body_file)
+                && let Ok(m) = serde_json::from_str::<VersionManifest>(&text)
+            {
+                return Ok(m);
+            }
+            // 服务端说没变，但我们手上那份用不了。全量取一次**并且把缓存修好**：
+            // 只取不写的话，之后每次启动都会重复"白跑一次条件请求 + 一次全量下载"，
+            // 而这个状态自己永远不会好起来。
+            return self
+                .fetch_and_store_manifest(&body_file, &validator_file)
+                .await;
+        }
+        if !(200..300).contains(&status) {
+            let body = res.text().await.unwrap_or_default();
+            return Err(api_error(status, &body));
+        }
+        // 响应头必须在消费 body **之前**取：`res.text()` 之后 res 就没了
+        let next = Validators {
+            etag: header(&res, "etag"),
+            last_modified: header(&res, "last-modified"),
+        };
+        let text = res.text().await?;
+        store_manifest(&body_file, &validator_file, &text, &next)
+    }
+
+    /// 无条件全量取一次清单并落盘。
+    async fn fetch_and_store_manifest(
+        &self,
+        body_file: &std::path::Path,
+        validator_file: &std::path::Path,
+    ) -> Result<VersionManifest, Error> {
+        let res = self
+            .http
+            .get(rewrite_mirror(VERSION_MANIFEST_URL, &self.mirror))
+            .send()
+            .await?;
+        let status = res.status().as_u16();
+        let next = Validators {
+            etag: header(&res, "etag"),
+            last_modified: header(&res, "last-modified"),
+        };
+        let text = res.text().await?;
+        if !(200..300).contains(&status) {
+            return Err(api_error(status, &text));
+        }
+        store_manifest(body_file, validator_file, &text, &next)
     }
 
     /// 版本 JSON 可能是继承型的（Fabric/Forge），此时还要取父版本再合并。
@@ -169,11 +302,13 @@ impl MetaClient {
         let root_id = child.id.clone();
         let mut merged = child;
         let mut next = merged.inherits_from.clone();
+        // 清单在循环外取一次：它是一份 1MB+ 的文档，而继承链最多 8 层，
+        // 放在循环里就是同一份文档连取 8 遍（装 Fabric/Quilt 时每次都走这条路径）
+        let manifest = self.manifest().await?;
         for _ in 0..MAX_DEPTH {
             let Some(parent_id) = next.take() else {
                 return Ok(merged);
             };
-            let manifest = self.manifest().await?;
             let parent = manifest
                 .by_id(&parent_id)
                 .ok_or_else(|| Error::Invalid(format!("unknown parent version: {parent_id}")))?;
@@ -311,5 +446,212 @@ mod tests {
     #[test]
     fn unknown_version_is_none() {
         assert!(trimmed().by_id("99.99.99").is_none());
+    }
+
+    // ---- manifest_cached：条件请求与缓存退化路径 ----
+
+    use std::sync::{Arc, Mutex};
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    use tokio::net::{TcpListener, TcpStream};
+
+    #[derive(Clone, Copy)]
+    enum Behavior {
+        /// 带 If-None-Match 就回 304，否则 200 + ETag/Last-Modified
+        Conditional,
+        /// 从不给校验子（部分镜像就是这样）
+        NoValidators,
+        /// 200，但正文解析不了
+        BadBody,
+    }
+
+    struct MetaServer {
+        base: String,
+        seen: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl MetaServer {
+        async fn start(behavior: Behavior, body: String) -> Self {
+            let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+            let base = format!("http://{}", listener.local_addr().unwrap());
+            let seen = Arc::new(Mutex::new(Vec::<String>::new()));
+            let sink = Arc::clone(&seen);
+            tokio::spawn(async move {
+                loop {
+                    let Ok((stream, _)) = listener.accept().await else {
+                        break;
+                    };
+                    let sink = Arc::clone(&sink);
+                    let body = body.clone();
+                    tokio::spawn(async move {
+                        let _ = handle_meta(stream, behavior, body, sink).await;
+                    });
+                }
+            });
+            Self { base, seen }
+        }
+
+        fn requests(&self) -> Vec<String> {
+            self.seen.lock().unwrap().clone()
+        }
+    }
+
+    async fn handle_meta(
+        mut stream: TcpStream,
+        behavior: Behavior,
+        body: String,
+        seen: Arc<Mutex<Vec<String>>>,
+    ) -> std::io::Result<()> {
+        let mut buf = [0u8; 8192];
+        let n = stream.read(&mut buf).await?;
+        let head = String::from_utf8_lossy(&buf[..n]).to_string();
+        seen.lock().unwrap().push(head.clone());
+
+        let conditional = head.to_ascii_lowercase().contains("if-none-match:");
+        let (status, headers, payload) = match behavior {
+            Behavior::Conditional if conditional => ("304 Not Modified", vec![], String::new()),
+            Behavior::Conditional => (
+                "200 OK",
+                vec![
+                    ("ETag", "\"v1\"".to_string()),
+                    ("Last-Modified", "Wed, 21 Oct 2026 07:28:00 GMT".to_string()),
+                ],
+                body,
+            ),
+            Behavior::NoValidators => ("200 OK", vec![], body),
+            Behavior::BadBody => ("200 OK", vec![], "this is not json".to_string()),
+        };
+        let mut resp = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n",
+            payload.len()
+        );
+        for (k, v) in headers {
+            resp.push_str(&format!("{k}: {v}\r\n"));
+        }
+        resp.push_str("\r\n");
+        resp.push_str(&payload);
+        stream.write_all(resp.as_bytes()).await?;
+        stream.flush().await
+    }
+
+    fn paths() -> (tempfile::TempDir, crate::paths::Paths) {
+        let dir = tempfile::tempdir().unwrap();
+        let p = crate::paths::Paths::new(dir.path().join("data"));
+        p.ensure().unwrap();
+        (dir, p)
+    }
+
+    fn manifest_body() -> String {
+        include_str!("../tests/fixtures/version_manifest_v2-trimmed.json").to_string()
+    }
+
+    /// 第二次请求必须带上第一次拿到的校验子，命中 304 时用磁盘上那份。
+    /// 这是整个缓存存在的理由：清单 1MB+，而 304 的正文是 0 字节。
+    #[tokio::test]
+    async fn a_second_fetch_is_conditional_and_a_304_uses_the_cache() {
+        let server = MetaServer::start(Behavior::Conditional, manifest_body()).await;
+        let (_d, p) = paths();
+        let meta = MetaClient::new(crate::api::http_client().unwrap(), server.base.clone());
+
+        let first = meta.manifest_cached(&p).await.unwrap();
+        assert!(!first.versions.is_empty());
+        assert!(p.cache().join("version_manifest.json").is_file());
+        assert!(p.cache().join("version_manifest.validators.json").is_file());
+
+        let second = meta.manifest_cached(&p).await.unwrap();
+        assert_eq!(second.versions.len(), first.versions.len());
+
+        let reqs = server.requests();
+        assert_eq!(reqs.len(), 2, "{reqs:?}");
+        assert!(
+            !reqs[0].to_ascii_lowercase().contains("if-none-match"),
+            "第一次请求还没有校验子，不该带 If-None-Match：{}",
+            reqs[0]
+        );
+        let lower = reqs[1].to_ascii_lowercase();
+        assert!(
+            lower.contains("if-none-match: \"v1\""),
+            "第二次应当带上 ETag：{}",
+            reqs[1]
+        );
+        assert!(
+            lower.contains("if-modified-since: wed, 21 oct 2026 07:28:00 gmt"),
+            "Last-Modified 也要带上（有的服务器只认这一个）：{}",
+            reqs[1]
+        );
+    }
+
+    /// 缓存坏了（读不出来、或存的是解析不了的东西）时必须退回全量取一次，
+    /// 而不是把"缓存坏了"变成"版本列表永远是空的"。
+    #[tokio::test]
+    async fn a_broken_cache_falls_back_to_a_full_fetch() {
+        let server = MetaServer::start(Behavior::Conditional, manifest_body()).await;
+        let (_d, p) = paths();
+        let meta = MetaClient::new(crate::api::http_client().unwrap(), server.base.clone());
+        meta.manifest_cached(&p).await.unwrap();
+
+        // 把正文换成垃圾，但保留校验子：服务端会说 304，而我们手上那份用不了
+        std::fs::write(p.cache().join("version_manifest.json"), b"{ not json").unwrap();
+        let got = meta.manifest_cached(&p).await.unwrap();
+        assert!(
+            !got.versions.is_empty(),
+            "应当退回全量取，而不是报错或返回空"
+        );
+
+        // 第三次请求是无条件的（退回全量取），并且把缓存修好了
+        let reqs = server.requests();
+        assert!(
+            !reqs[2].to_ascii_lowercase().contains("if-none-match"),
+            "退回的那次不该带校验子：{}",
+            reqs[2]
+        );
+        assert!(
+            std::fs::read_to_string(p.cache().join("version_manifest.json"))
+                .unwrap()
+                .contains("versions")
+        );
+    }
+
+    /// 200 但正文解析不了时**绝不落盘**：把一份坏清单缓存下来，会让之后每次启动
+    /// 都拿它当"没变"，症状是版本列表停在某一天，而且再也修不好（304 永远命中）。
+    #[tokio::test]
+    async fn an_unparseable_body_is_never_cached() {
+        let server = MetaServer::start(Behavior::BadBody, manifest_body()).await;
+        let (_d, p) = paths();
+        let meta = MetaClient::new(crate::api::http_client().unwrap(), server.base.clone());
+
+        assert!(meta.manifest_cached(&p).await.is_err());
+        assert!(
+            !p.cache().join("version_manifest.json").exists(),
+            "坏正文不该落盘"
+        );
+        assert!(
+            !p.cache().join("version_manifest.validators.json").exists(),
+            "校验子也不该落盘（否则下次会带着它发条件请求）"
+        );
+    }
+
+    /// 服务端不给校验子（部分镜像）时，行为必须与没有缓存时完全一样：
+    /// 每次全量取，不发条件头，也不写一个永远命中不了的校验子文件。
+    #[tokio::test]
+    async fn without_validators_every_fetch_is_full() {
+        let server = MetaServer::start(Behavior::NoValidators, manifest_body()).await;
+        let (_d, p) = paths();
+        let meta = MetaClient::new(crate::api::http_client().unwrap(), server.base.clone());
+
+        meta.manifest_cached(&p).await.unwrap();
+        meta.manifest_cached(&p).await.unwrap();
+        let reqs = server.requests();
+        assert_eq!(reqs.len(), 2);
+        assert!(
+            reqs.iter()
+                .all(|r| !r.to_ascii_lowercase().contains("if-none-match")),
+            "没有 ETag 就不该发条件头：{reqs:?}"
+        );
+        // 正文仍然被缓存（省一次解析），但校验子是空的
+        let v: Validators = serde_json::from_str(
+            &std::fs::read_to_string(p.cache().join("version_manifest.validators.json")).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(v, Validators::default());
     }
 }

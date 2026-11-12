@@ -535,3 +535,81 @@ textarea {
   font-family: var(--font-mono);
   word-break: break-all;
 }
+
+/* ---- P5-W13：日志查看器与崩溃诊断 ---- */
+
+/* 级别过滤用的 chip 是按钮（现有的 .chip 都是 span），补上按钮该有的手感 */
+button.chip {
+  cursor: pointer;
+  font-family: inherit;
+  color: inherit;
+}
+
+.chip.off {
+  opacity: 0.45;
+  text-decoration: line-through;
+}
+
+/* 级别着色。颜色取自主题变量，不写死：日志区在深浅两套主题下都要能读 */
+.log-line.lvl-fatal,
+.log-line.lvl-error {
+  color: var(--danger);
+}
+
+.log-line.lvl-warn {
+  color: var(--warning);
+}
+
+.log-line.lvl-info {
+  color: var(--text);
+}
+
+.log-line.lvl-debug,
+.log-line.lvl-trace,
+.log-line.lvl-other {
+  color: var(--text-muted);
+}
+
+.finding {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 10px 12px;
+}
+
+/* 证据是日志原文行，等宽、可换行、不居中：用户要能逐字核对 */
+.evidence {
+  margin: 8px 0 0;
+  padding: 6px 8px;
+  background: var(--bg);
+  border-left: 3px solid var(--border);
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 11.5px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  color: var(--text-muted);
+}
+
+.oplog {
+  max-height: 30vh;
+}
+
+/* mod 自己吐出来的 ANSI 前景色。只有这 16 个（30-37 与 90-97）：
+   日志是追加的文本而不是终端，光标移动与清屏那些在里面没有意义 */
+.ansi-black { color: #4b5563; }
+.ansi-red { color: #ef4444; }
+.ansi-green { color: #22c55e; }
+.ansi-yellow { color: #eab308; }
+.ansi-blue { color: #3b82f6; }
+.ansi-magenta { color: #d946ef; }
+.ansi-cyan { color: #06b6d4; }
+.ansi-white { color: #e5e7eb; }
+.ansi-bright-black { color: #6b7280; }
+.ansi-bright-red { color: #f87171; }
+.ansi-bright-green { color: #4ade80; }
+.ansi-bright-yellow { color: #facc15; }
+.ansi-bright-blue { color: #60a5fa; }
+.ansi-bright-magenta { color: #e879f9; }
+.ansi-bright-cyan { color: #22d3ee; }
+.ansi-bright-white { color: #f9fafb; }
+.log-line .b { font-weight: 600; }

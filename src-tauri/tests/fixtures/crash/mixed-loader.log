@@ -1,0 +1,29 @@
+[21:19:53.127] [main/INFO] [Launcher/MODLAUNCHER]: ModLauncher running: args [--fml.neoForgeVersion, 21.4.161, --fml.fmlVersion, 6.0.18, --fml.mcVersion, 1.21.4, --fml.neoFormVersion, 20241203.161809, --launchTarget, neoforgeclient, --username, Tester, --version, neoforge-21.4.161, --gameDir, D:\Temp\opencode\shared-live\instances\crash-mixed-loader\.minecraft, --assetsDir, D:\Temp\opencode\shared-live\cache\assets, --assetIndex, 19, --uuid, 069a79f444e94726a5befca90e38aaf5, --accessToken, ❄❄❄❄❄❄❄❄, --clientId, , --xuid, 0, --userType, msa, --versionType, release, --quickPlayPath, D:\Temp\opencode\shared-live\instances\crash-mixed-loader\.minecraft\quickPlay] 
+[21:19:53.131] [main/INFO] [Launcher/MODLAUNCHER]: JVM identified as Microsoft OpenJDK 64-Bit Server VM 21.0.8+9-LTS 
+[21:19:53.134] [main/INFO] [Launcher/MODLAUNCHER]: ModLauncher 11.0.4+main.d2e20e43 starting: java version 21.0.8 by Microsoft; OS Windows 11 arch amd64 version 10.0 
+[21:19:53.411] [main/INFO] [loading.ImmediateWindowHandler/]: Loading ImmediateWindowProvider fmlearlywindow 
+[21:19:53.804] [main/INFO] [EARLYDISPLAY/]: Trying GL version 4.6 
+[21:19:53.968] [main/INFO] [EARLYDISPLAY/]: Requested GL version 4.6 got version 4.6 
+[21:19:54.123] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.7 Source=union:/D:/Temp/opencode/shared-live/cache/libraries/net/fabricmc/sponge-mixin/0.15.2+mixin.0.8.7/sponge-mixin-0.15.2+mixin.0.8.7.jar%23134!/ Service=ModLauncher Env=CLIENT 
+[21:19:54.329] [pool-2-thread-1/INFO] [EARLYDISPLAY/]: GL info: Intel(R) RaptorLake-S Mobile Graphics Controller GL version 4.6.0 - Build 32.0.101.6881, Intel 
+[21:19:54.561] [main/INFO] [loading.moddiscovery.ModDiscoverer/SCAN]: Found mod file "client-1.21.4-20241203.161809-srg.jar" [locator: production client provider +net.neoforged:neoforge:21.4.161:client] 
+[21:19:54.593] [main/INFO] [loading.moddiscovery.ModDiscoverer/SCAN]: Found mod file "neoforge-21.4.161-universal.jar" [locator: PathBasedLocator[name=neoforge, paths=[D:\Temp\opencode\shared-live\cache\libraries\net\neoforged\neoforge\21.4.161\neoforge-21.4.161-universal.jar]], reader: mod manifest] 
+[21:19:54.643] [main/WARN] [loading.moddiscovery.ModDiscoverer/SCAN]: Skipping jar. File mods\sodium-fabric-0.6.13+mc1.21.4.jar is a Fabric mod and cannot be loaded 
+[21:19:54.731] [main/INFO] [loading.moddiscovery.locators.JarInJarDependencyLocator/]: Found 2 dependencies adding them to mods collection 
+[21:19:54.733] [main/INFO] [loading.moddiscovery.ModDiscoverer/SCAN]: Found gamelibrary file "mixinextras-neoforge-0.5.3.jar" [parent: neoforge-21.4.161-universal.jar, locator: jarinjar, reader: mod manifest] 
+[21:19:54.733] [main/INFO] [loading.moddiscovery.ModDiscoverer/SCAN]: Found library file "net.neoforged.neoforge-coremods-21.4.161.jar" [parent: neoforge-21.4.161-universal.jar, locator: jarinjar, reader: mod manifest] 
+[21:19:54.734] [main/INFO] [loading.moddiscovery.ModDiscoverer/]: 
+     Mod List:
+		Name Version (Mod Id)
+
+		Minecraft 1.21.4 (minecraft)
+		NeoForge 21.4.161 (neoforge) 
+[21:19:55.272] [main/INFO] [LaunchServiceHandler/MODLAUNCHER]: Launching target 'neoforgeclient' with arguments [--version, neoforge-21.4.161, --gameDir, D:\Temp\opencode\shared-live\instances\crash-mixed-loader\.minecraft, --assetsDir, D:\Temp\opencode\shared-live\cache\assets, --uuid, 069a79f444e94726a5befca90e38aaf5, --username, Tester, --assetIndex, 19, --accessToken, ❄❄❄❄❄❄❄❄, --clientId, , --xuid, 0, --userType, msa, --versionType, release, --quickPlayPath, D:\Temp\opencode\shared-live\instances\crash-mixed-loader\.minecraft\quickPlay] 
+2026-10-30T13:19:56.345233500Z main WARN Advanced terminal features are not available in this environment
+[21:19:58] [Datafixer Bootstrap/INFO] [mojang/DataFixerBuilder]: 246 Datafixer optimizations took 372 milliseconds
+[21:19:59] [pool-6-thread-1/INFO] [MixinExtras|Service/]: Initializing MixinExtras via com.llamalad7.mixinextras.service.MixinExtrasServiceImpl(version=0.5.3).
+[21:20:04] [Render thread/WARN] [minecraft/VanillaPackResourcesBuilder]: Assets URL 'union:/D:/Temp/opencode/shared-live/cache/libraries/net/minecraft/client/1.21.4-20241203.161809/client-1.21.4-20241203.161809-srg.jar%23214!/assets/.mcassetsroot' uses unexpected schema
+[21:20:04] [Render thread/WARN] [minecraft/VanillaPackResourcesBuilder]: Assets URL 'union:/D:/Temp/opencode/shared-live/cache/libraries/net/minecraft/client/1.21.4-20241203.161809/client-1.21.4-20241203.161809-srg.jar%23214!/data/.mcassetsroot' uses unexpected schema
+[21:20:04] [Render thread/INFO] [mojang/YggdrasilAuthenticationService]: Environment: Environment[sessionHost=https://sessionserver.mojang.com, servicesHost=https://api.minecraftservices.com, name=PROD]
+[21:20:04] [Render thread/INFO] [minecraft/Minecraft]: Setting user: Tester
+[21:20:04] [Render thread/INFO] [minecraft/Minecraft]: Backend library: LWJGL version 3.3.3+5

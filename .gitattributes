@@ -1,0 +1,2 @@
+# Recorded game output preserves original trailing whitespace.
+src-tauri/tests/fixtures/crash/*.log -whitespace

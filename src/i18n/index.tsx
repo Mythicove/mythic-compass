@@ -25,6 +25,7 @@ const zhCN: Messages = {
   "account.openSite": "在网站上管理独立密码",
 
   "home.skinPreview": "皮肤预览",
+  "home.skinPreviewPlayer": "预览对象",
   "home.instances": "我的实例",
   "home.noInstances": "还没有实例。到「实例」页新建一个，装好版本即可启动。",
 
@@ -204,11 +205,72 @@ const zhCN: Messages = {
   "instances.loaderRemoved": "已回到原版",
 
   "logs.title": "游戏日志",
-  "logs.hint": "实时显示游戏进程的 stdout/stderr（只保留最近 2000 行，应用启动即开始记录）。崩溃诊断规则库随 P5 落地。",
+  "logs.hint":
+    "实时显示游戏进程的 stdout/stderr（只保留最近 2000 行，应用启动即开始记录），也可以打开下面列出的归档。控制台输出是纯文本（不是 Mojang 那份 XML 布局），所以实时流、归档与崩溃报告用同一套解析与同一套诊断规则。",
   "logs.clear": "清空",
   "logs.empty": "还没有日志。启动一个实例后这里会实时显示游戏输出。",
   "logs.exited": "{instance} 已退出，退出码 {code}。",
   "logs.stopped": "{instance} 已被停止。",
+  "logs.instance": "实例",
+  "logs.refresh": "重新诊断",
+  "logs.copy": "复制全文",
+  "logs.openDir": "打开目录",
+  "logs.search": "搜索…",
+  "logs.follow": "跟随末尾",
+  "logs.truncated": "文件太大，这里只显示末尾的一段。要看全文请打开日志目录。",
+  "logs.diagnosis": "崩溃诊断",
+  "logs.diagnosisLoading": "读取中…",
+  "logs.diagnosisNoLogs": "{instance} 还没有日志——它可能从没启动过。",
+  "logs.diagnosisClean": "在 {source} 里没查出已知问题。",
+  "logs.diagnosisSource": "依据：{source}",
+  "logs.diagnosisPartial": "文件超过诊断上限，只看了末尾：早期的告警可能漏掉。",
+  "logs.severity.fatal": "起不来",
+  "logs.severity.warning": "游戏还在跑，但有件事不对",
+  "logs.level.fatal": "FATAL",
+  "logs.level.error": "ERROR",
+  "logs.level.warn": "WARN",
+  "logs.level.info": "INFO",
+  "logs.level.debug": "DEBUG",
+  "logs.level.trace": "TRACE",
+  "logs.level.other": "其它",
+  "logs.archives": "日志归档",
+  "logs.archivesHint":
+    "游戏自己滚动的历史日志与崩溃报告。实测常见失败并不写崩溃报告（JVM 启动阶段、loader 的 mod 解析阶段都在报告器之外），所以列表里没有 crash-reports 并不代表没出过错。",
+  "logs.archivesEmpty": "还没有归档。",
+  "logs.archiveEmpty": "这份日志是空的。",
+  "logs.archiveColName": "文件",
+  "logs.archiveColKind": "类型",
+  "logs.archiveColSize": "大小",
+  "logs.archiveOpen": "查看",
+  "logs.archiveClose": "回到实时",
+  "logs.kind.gameLog": "游戏日志",
+  "logs.kind.crashReport": "崩溃报告",
+  "logs.oplog": "启动器操作日志",
+  "logs.oplogHint":
+    "启动器自己做了什么：装了哪个版本、用什么 Java 启动、退出码是多少。报问题时把这份一起给出来——「还没跑起来」那类失败根本没有游戏日志。里面没有任何机密（不记令牌，也不记独立密码）。",
+  "logs.oplogEmpty": "还没有记录。",
+
+  "diagnose.java_version_mismatch":
+    "Java 版本不对：这个游戏版本要 Java {major}。同一台机器上可以装多个 JDK，在实例设置里挑对的那个即可。",
+  "diagnose.heap_misconfigured":
+    "内存参数自相矛盾（初始堆大于最大堆），JVM 拒绝启动。检查实例设置里的内存与自定义 JVM 参数。",
+  "diagnose.out_of_memory": "内存不足：Java 堆用尽了。给这个实例分配更多内存。",
+  "diagnose.fabric_missing_mod": "缺少 mod：{id}。装上它（或装上提供它的 mod）再启动。",
+  "diagnose.fabric_mod_version_conflict":
+    "有 mod 与当前游戏版本或彼此不兼容。Fabric 在日志里写明了是哪一条依赖、要求的版本范围是什么。",
+  "diagnose.fabric_mod_resolution_failed": "Fabric 的 mod 解析失败，但原因不是常见的两种。看日志里的 Reason 行。",
+  "diagnose.loader_mismatch_skipped":
+    "有 mod 是给别的 loader 的，被跳过了——游戏照常启动，但那个 mod 没有生效。Fabric 的 mod 不能放进 Forge/NeoForge 实例，反之亦然。",
+  "diagnose.mod_jar_skipped":
+    "有一个 mod jar 读不了，被跳过了（常见原因是它是为别的游戏版本编译的）——游戏照常启动，但那个 mod 没有生效。",
+  "diagnose.mojang_user_properties_401":
+    "游戏向 Mojang 取用户属性时得到 401。用我们镜像站的账号时这是预期的：令牌是镜像站发的，Mojang 不认，游戏照常进行，可以忽略。",
+  "diagnose.crash_report_unrecognized": "游戏写了崩溃报告，但原因不在已知规则里。摘要见下，完整报告在日志目录。",
+  "diagnose.action.installJava": "去装 Java {major}",
+  "diagnose.action.installMod": "去找 {id}",
+  "diagnose.action.adjustMemory": "调内存",
+  "diagnose.action.openContent": "管理内容",
+  "diagnose.action.openLogs": "看完整日志",
 
   "settings.servers": "服务器地址",
   "settings.apiUrl": "Mirror（皮肤站 / 账号）",
@@ -230,7 +292,7 @@ const zhCN: Messages = {
   "settings.accounts": "账号",
   "settings.accountsStoreKeyring": "令牌存在系统钥匙串里。",
   "settings.accountsStorePlain":
-    "令牌以**明文**存在 {path}（权限 0600，与账号列表分开存）。这不是加密：同机上能读到这个文件的人就能拿到令牌。接入系统钥匙串之前请先知道这一点。",
+    "令牌以「明文」存在 {path}（权限 0600，与账号列表分开存）。这不是加密：同机上能读到这个文件的人就能拿到令牌。接入系统钥匙串之前请先知道这一点。",
   "settings.accountsEmpty": "还没有账号。用上面的登录表单登录镜像站，或在下面加一个离线账号。",
   "settings.accountColName": "玩家",
   "settings.accountColKind": "类型",
@@ -245,6 +307,59 @@ const zhCN: Messages = {
   "settings.accountAddOffline": "添加离线账号",
   "settings.accountOfflineHint":
     "离线账号不联网、没有令牌，UUID 由名字派生（与原版服务端的算法一致）。只能用 ASCII 字母、数字与下划线，最长 16 字符；进正版服务器会被拒。",
+  "settings.credentials": "启动器独立密码",
+  "settings.credentialsHint":
+    "启动器登录用的是「玩家名 + 该玩家的独立密码」，网站主密码在这个端点上无效。当前玩家：{name}。建议每台设备一条，上限由站点决定（默认 3 条）。",
+  "settings.credentialsLoading": "读取中…",
+  "settings.credentialsEmpty":
+    "这个玩家还没有独立密码——在补建一条之前，它无法从任何启动器登录（包括这一个）。",
+  "settings.credentialsColLabel": "标签",
+  "settings.credentialsColCreated": "创建时间",
+  "settings.credentialsColUsed": "最近使用",
+  "settings.credentialsNeverUsed": "从未使用",
+  "settings.credentialsLabel": "标签",
+  "settings.credentialsLabelPlaceholder": "台式机",
+  "settings.credentialsPassword": "独立密码",
+  "settings.credentialsCreate": "新建",
+  "settings.credentialsRevoke": "撤销",
+  "settings.credentialsRevokeConfirm":
+    "撤销独立密码「{name}」？由它建立的会话会立即失效——如果撤的正是这台设备在用的那一条，你自己也会被登出。",
+  "settings.credentialsPasswordHint":
+    "明文只在这一次提交里存在：不落盘、不进日志，提交后立刻从输入框清掉。撤销与新建都直接连站点，启动器不代存密码。",
+  "settings.credentialsOffline": "离线账号没有站点，也没有独立密码可管。",
+  "settings.java": "Java",
+  "settings.javaHint":
+    "启动器会按游戏版本的要求挑 Java：1.16.5 及更早必须是 Java 8，1.17–1.20.4 是 17，1.20.5 起是 21。本机没有合适的就会自动下载官方运行时（约 140MB，进度见下）。也可以在实例设置里为单个实例指定路径。",
+  "settings.javaDownloading": "正在下载 Java：{done} MB / {total} MB",
+  "settings.javaDetected": "本机探测到的",
+  "settings.javaNoneDetected":
+    "没有找到任何可用的 Java（每一条候选都真跑过 `java -version`）。下面下载一个官方运行时，或在实例设置里手动指定路径。",
+  "settings.javaColVersion": "版本",
+  "settings.javaColPath": "路径",
+  "settings.javaOfficial": "官方运行时",
+  "settings.javaOfficialHint":
+    "来自 Mojang 的 java-runtime 清单，装进 cache/java/。「产品名」是 Mojang 的叫法，与 Java 版本不是一一对应（实测 gamma 是 17、delta 才是 21），所以要看右边那一列的版本号。",
+  "settings.javaColComponent": "产品名",
+  "settings.javaColOfferVersion": "版本",
+  "settings.javaDownload": "下载",
+  "settings.javaReinstall": "重装",
+  "settings.javaRemove": "删除",
+  "settings.javaRemoveConfirm": "删除已下载的 {component}？只删 cache/java/ 下的这一份，不影响你自己装的 JDK。",
+  "settings.javaNoOfficialForPlatform":
+    "这个平台上 Mojang 没有发布官方运行时（Linux arm64 整个不在清单里；Apple Silicon 上没有 Java 8/16）。请自行安装对应版本的 JDK，然后在实例设置里指定它的路径。",
+  "settings.javaIndexUnavailable":
+    "现在取不到官方运行时清单（{error}）。已经装在 cache/java/ 里的仍然可用；重试或检查网络与镜像设置。",
+  "settings.update": "自动更新",
+  "settings.updateCheck": "检查更新",
+  "settings.updateUnconfigured":
+    "这个构建没有接自动更新（未注入更新签名公钥）。从源码构建出来的包就是这样：更新签名私钥必须由发布方自己生成并保管，不能由构建过程随手造一个。要升级请从发布页下载新版。",
+  "settings.updateCurrent": "当前是最新版本（{version}）。",
+  "settings.updateChecking": "正在检查…",
+  "settings.updateInstalling": "正在下载并安装…",
+  "settings.updateInstalled": "{version} 已下载完成，重启启动器即可生效。",
+  "settings.updateError": "检查更新失败：{error}",
+  "settings.updateAvailable": "有新版本 {version}。",
+  "settings.updateInstall": "下载并安装",
   "settings.paths": "数据目录",
   "settings.pathsHint": "资源、库、版本与 JRE 全局共享（多实例不重复下载）；实例各自隔离。",
   "settings.openDataDir": "打开数据目录",
@@ -259,6 +374,16 @@ const zhCN: Messages = {
   "errors.auth": "登录状态已失效，请重新登录",
   "errors.binding_required": "本站要求先绑定第三方账号，请到网站的账号页完成绑定",
   "errors.password_login_disabled": "本站已关闭账号密码登录（启动器不受影响，请用玩家名 + 独立密码）",
+  "errors.email_not_verified": "邮箱还没有验证，验证之后才能从启动器登录",
+  // 站点故意不区分"密码错"与"这个玩家还没有独立密码"（一区分就能拿玩家名探测账号是否存在），
+  // 所以这句话必须覆盖两种可能，而后者是存量用户升级后最常见的首次失败。
+  "errors.invalid_credentials":
+    "玩家名或独立密码不正确。注意启动器只认该玩家的独立密码，网站主密码在这里无效；如果这个玩家还没有独立密码，需要先到网站为它创建一条。",
+  "errors.web_session_required": "这一步要在网站的账号页完成：启动器的登录身份只对当前这一个玩家有效",
+  "errors.action.bindings": "去绑定第三方账号",
+  "errors.action.account": "打开账号页",
+  "errors.action.credentials": "去创建独立密码",
+  "errors.cli_unknown": "无法识别的命令行参数：{args}（已忽略，启动器照常启动）",
   "errors.unknown": "操作失败",
 };
 
@@ -281,6 +406,7 @@ const en: Messages = {
   "account.openSite": "Manage launcher passwords on the site",
 
   "home.skinPreview": "Skin preview",
+  "home.skinPreviewPlayer": "Previewing",
   "home.instances": "My instances",
   "home.noInstances":
     "No instances yet. Create one on the Instances page — install a version and launch it.",
@@ -464,11 +590,76 @@ const en: Messages = {
   "instances.loaderRemoved": "Back to vanilla",
 
   "logs.title": "Game log",
-  "logs.hint": "Live stdout/stderr from the game process (last 2000 lines kept, recorded from app start). Crash-analysis rules land with P5.",
+  "logs.hint":
+    "Live stdout/stderr from the game process (last 2000 lines kept, recorded from app start); archives listed below can be opened too. Console output is plain text rather than Mojang's XML layout, so the live stream, the archives and crash reports all share one parser and one set of diagnosis rules.",
   "logs.clear": "Clear",
   "logs.empty": "No log yet. Launch an instance and its output shows up here live.",
   "logs.exited": "{instance} exited with code {code}.",
   "logs.stopped": "{instance} was stopped.",
+  "logs.instance": "Instance",
+  "logs.refresh": "Re-diagnose",
+  "logs.copy": "Copy all",
+  "logs.openDir": "Open directory",
+  "logs.search": "Search…",
+  "logs.follow": "Follow tail",
+  "logs.truncated":
+    "The file is large, so only its tail is shown here. Open the log directory for the whole thing.",
+  "logs.diagnosis": "Crash diagnosis",
+  "logs.diagnosisLoading": "Loading…",
+  "logs.diagnosisNoLogs": "{instance} has no logs yet — it may never have been launched.",
+  "logs.diagnosisClean": "No known problem found in {source}.",
+  "logs.diagnosisSource": "Based on: {source}",
+  "logs.diagnosisPartial":
+    "The file is above the diagnosis limit, so only its tail was read: early warnings may have been missed.",
+  "logs.severity.fatal": "did not start",
+  "logs.severity.warning": "still running, but something is off",
+  "logs.level.fatal": "FATAL",
+  "logs.level.error": "ERROR",
+  "logs.level.warn": "WARN",
+  "logs.level.info": "INFO",
+  "logs.level.debug": "DEBUG",
+  "logs.level.trace": "TRACE",
+  "logs.level.other": "other",
+  "logs.archives": "Log archives",
+  "logs.archivesHint":
+    "The game's own rolled logs and crash reports. Measured fact: common failures do not write a crash report at all (JVM startup and the loader's mod resolution both happen outside the reporter), so an empty crash-reports list does not mean nothing went wrong.",
+  "logs.archivesEmpty": "No archives yet.",
+  "logs.archiveEmpty": "This log is empty.",
+  "logs.archiveColName": "File",
+  "logs.archiveColKind": "Kind",
+  "logs.archiveColSize": "Size",
+  "logs.archiveOpen": "View",
+  "logs.archiveClose": "Back to live",
+  "logs.kind.gameLog": "Game log",
+  "logs.kind.crashReport": "Crash report",
+  "logs.oplog": "Launcher operation log",
+  "logs.oplogHint":
+    "What the launcher itself did: which version it installed, which Java it launched with, what the exit code was. Include this when reporting a problem — for failures that happen before the game starts, there is no game log at all. It contains no secrets (no tokens, no launcher passwords).",
+  "logs.oplogEmpty": "Nothing recorded yet.",
+
+  "diagnose.java_version_mismatch":
+    "Wrong Java version: this game version needs Java {major}. Several JDKs can coexist on one machine; pick the right one in the instance settings.",
+  "diagnose.heap_misconfigured":
+    "Contradictory memory settings (initial heap larger than maximum heap), so the JVM refused to start. Check the instance's memory setting and custom JVM arguments.",
+  "diagnose.out_of_memory": "Out of memory: the Java heap was exhausted. Allocate more to this instance.",
+  "diagnose.fabric_missing_mod": "Missing mod: {id}. Install it (or the mod that provides it) and try again.",
+  "diagnose.fabric_mod_version_conflict":
+    "A mod is incompatible with this game version or with another mod. The log says which dependency and which version range it wanted.",
+  "diagnose.fabric_mod_resolution_failed":
+    "Fabric's mod resolution failed, but not for one of the two common reasons. See the Reason line in the log.",
+  "diagnose.loader_mismatch_skipped":
+    "A mod was built for a different loader and was skipped — the game still starts, but that mod does nothing. Fabric mods cannot go into a Forge/NeoForge instance, or vice versa.",
+  "diagnose.mod_jar_skipped":
+    "A mod jar could not be read and was skipped (usually because it was built for a different game version) — the game still starts, but that mod does nothing.",
+  "diagnose.mojang_user_properties_401":
+    "The game got a 401 fetching user properties from Mojang. With an account from our mirror site this is expected: the token was issued by the mirror, Mojang does not know it, and the game carries on. Safe to ignore.",
+  "diagnose.crash_report_unrecognized":
+    "The game wrote a crash report, but the cause is not one of the known rules. Summary below; the full report is in the log directory.",
+  "diagnose.action.installJava": "Get Java {major}",
+  "diagnose.action.installMod": "Find {id}",
+  "diagnose.action.adjustMemory": "Adjust memory",
+  "diagnose.action.openContent": "Manage content",
+  "diagnose.action.openLogs": "See the full log",
 
   "settings.servers": "Servers",
   "settings.apiUrl": "Mirror (skin site / accounts)",
@@ -490,7 +681,7 @@ const en: Messages = {
   "settings.accounts": "Accounts",
   "settings.accountsStoreKeyring": "Tokens are kept in the system keyring.",
   "settings.accountsStorePlain":
-    "Tokens are stored in **plain text** at {path} (mode 0600, separate from the account list). This is not encryption: anything on this machine that can read that file can use the token. Know this until the system keyring is wired up.",
+    "Tokens are stored in plain text at {path} (mode 0600, separate from the account list). This is not encryption: anything on this machine that can read that file can use the token. Know this until the system keyring is wired up.",
   "settings.accountsEmpty":
     "No accounts yet. Sign in to your mirror site above, or add an offline account below.",
   "settings.accountColName": "Player",
@@ -506,6 +697,60 @@ const en: Messages = {
   "settings.accountAddOffline": "Add offline account",
   "settings.accountOfflineHint":
     "An offline account needs no network and has no token; its UUID is derived from the name with the same algorithm vanilla servers use. ASCII letters, digits and underscore only, up to 16 characters. Official servers will reject it.",
+  "settings.credentials": "Launcher passwords",
+  "settings.credentialsHint":
+    "Launcher sign-in takes a player name plus that player's own launcher password; the site's main password does not work on this endpoint. Current player: {name}. One per device is the intent, and the site sets the cap (3 by default).",
+  "settings.credentialsLoading": "Loading…",
+  "settings.credentialsEmpty":
+    "This player has no launcher password yet — until one is created it cannot sign in from any launcher, including this one.",
+  "settings.credentialsColLabel": "Label",
+  "settings.credentialsColCreated": "Created",
+  "settings.credentialsColUsed": "Last used",
+  "settings.credentialsNeverUsed": "never",
+  "settings.credentialsLabel": "Label",
+  "settings.credentialsLabelPlaceholder": "Desktop",
+  "settings.credentialsPassword": "Launcher password",
+  "settings.credentialsCreate": "Create",
+  "settings.credentialsRevoke": "Revoke",
+  "settings.credentialsRevokeConfirm":
+    "Revoke the launcher password “{name}”? Sessions created with it die immediately — if it is the one this device is using, you will be signed out too.",
+  "settings.credentialsPasswordHint":
+    "The plaintext exists only for this one submission: it is never written to disk, never logged, and cleared from the field as soon as you submit. Create and revoke both talk to the site directly; the launcher never keeps a copy.",
+  "settings.credentialsOffline": "An offline account has no site, so there are no launcher passwords to manage.",
+  "settings.java": "Java",
+  "settings.javaHint":
+    "The launcher picks Java by what the game version asks for: exactly Java 8 up to 1.16.5, 17 for 1.17–1.20.4, 21 from 1.20.5 on. If nothing suitable is on this machine it downloads the official runtime (~140MB, progress shown below). You can also pin a path per instance in its settings.",
+  "settings.javaDownloading": "Downloading Java: {done} MB / {total} MB",
+  "settings.javaDetected": "Detected on this machine",
+  "settings.javaNoneDetected":
+    "No usable Java found (every candidate was really run with `java -version`). Download an official runtime below, or point an instance at one in its settings.",
+  "settings.javaColVersion": "Version",
+  "settings.javaColPath": "Path",
+  "settings.javaOfficial": "Official runtimes",
+  "settings.javaOfficialHint":
+    "From Mojang's java-runtime manifest, installed into cache/java/. The product names are Mojang's and do not map one-to-one onto Java versions (measured: gamma is 17, delta is 21), so read the version column.",
+  "settings.javaColComponent": "Product",
+  "settings.javaColOfferVersion": "Version",
+  "settings.javaDownload": "Download",
+  "settings.javaReinstall": "Reinstall",
+  "settings.javaRemove": "Delete",
+  "settings.javaRemoveConfirm":
+    "Delete the downloaded {component}? Only the copy under cache/java/ is removed; your own JDK installs are untouched.",
+  "settings.javaNoOfficialForPlatform":
+    "Mojang publishes no official runtime for this platform (Linux arm64 is absent from the manifest entirely; Apple Silicon has no Java 8 or 16). Install a suitable JDK yourself and point the instance at it in its settings.",
+  "settings.javaIndexUnavailable":
+    "The official runtime manifest could not be fetched right now ({error}). Whatever is already in cache/java/ still works; retry, or check the network and mirror settings.",
+  "settings.update": "Updates",
+  "settings.updateCheck": "Check for updates",
+  "settings.updateUnconfigured":
+    "This build has no auto-update (the update signing public key was not injected). Builds from source are like this on purpose: the signing private key has to be generated and kept by whoever releases, never minted by the build. Grab new versions from the release page.",
+  "settings.updateCurrent": "You are on the latest version ({version}).",
+  "settings.updateChecking": "Checking…",
+  "settings.updateInstalling": "Downloading and installing…",
+  "settings.updateInstalled": "{version} is downloaded. Restart the launcher to apply it.",
+  "settings.updateError": "The update check failed: {error}",
+  "settings.updateAvailable": "Version {version} is available.",
+  "settings.updateInstall": "Download and install",
   "settings.paths": "Data directories",
   "settings.pathsHint":
     "Assets, libraries, versions and JREs are shared globally (instances never re-download them); instances stay isolated.",
@@ -523,6 +768,18 @@ const en: Messages = {
     "This site requires a linked third-party account. Link one on the site's account page",
   "errors.password_login_disabled":
     "Password sign-in is disabled on this site (launchers are unaffected — use a player name and its launcher password)",
+  "errors.email_not_verified": "The email address is not verified yet; launcher sign-in needs that first",
+  // The site deliberately does not tell "wrong password" apart from "this player has no launcher
+  // password yet" (telling them apart would let anyone probe which player names exist), so this
+  // copy has to cover both — and the latter is the most common first failure after an upgrade.
+  "errors.invalid_credentials":
+    "Wrong player name or launcher password. Note that the launcher only accepts that player's launcher password, not the site's main password; if this player has none yet, one has to be created on the website first.",
+  "errors.web_session_required":
+    "That has to be done on the website's account page: a launcher session is only valid for the one player it was issued for",
+  "errors.action.bindings": "Link a third-party account",
+  "errors.action.account": "Open the account page",
+  "errors.action.credentials": "Create a launcher password",
+  "errors.cli_unknown": "Unrecognized command-line arguments: {args} (ignored; the launcher started normally)",
   "errors.unknown": "Something went wrong",
 };
 

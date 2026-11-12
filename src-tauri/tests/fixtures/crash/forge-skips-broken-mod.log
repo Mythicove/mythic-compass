@@ -1,0 +1,71 @@
+Ignoring duplicate module on SecureModuleFinder: jtracy: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/com/mojang/jtracy/1.0.29/jtracy-1.0.29-natives-windows.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.freetype.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-freetype/3.3.3/lwjgl-freetype-3.3.3-natives-windows-arm64.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.freetype.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-freetype/3.3.3/lwjgl-freetype-3.3.3-natives-windows-x86.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.glfw.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-glfw/3.3.3/lwjgl-glfw-3.3.3-natives-windows-arm64.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.glfw.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-glfw/3.3.3/lwjgl-glfw-3.3.3-natives-windows-x86.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.jemalloc.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-jemalloc/3.3.3/lwjgl-jemalloc-3.3.3-natives-windows-arm64.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.jemalloc.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-jemalloc/3.3.3/lwjgl-jemalloc-3.3.3-natives-windows-x86.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.openal.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-openal/3.3.3/lwjgl-openal-3.3.3-natives-windows-arm64.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.openal.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-openal/3.3.3/lwjgl-openal-3.3.3-natives-windows-x86.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.opengl.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-opengl/3.3.3/lwjgl-opengl-3.3.3-natives-windows-arm64.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.opengl.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-opengl/3.3.3/lwjgl-opengl-3.3.3-natives-windows-x86.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.stb.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-stb/3.3.3/lwjgl-stb-3.3.3-natives-windows-arm64.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.stb.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-stb/3.3.3/lwjgl-stb-3.3.3-natives-windows-x86.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.tinyfd.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-tinyfd/3.3.3/lwjgl-tinyfd-3.3.3-natives-windows-arm64.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.tinyfd.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl-tinyfd/3.3.3/lwjgl-tinyfd-3.3.3-natives-windows-x86.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows-arm64.jar!/]
+Ignoring duplicate module on SecureModuleFinder: org.lwjgl.natives: Jar[jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/lwjgl/lwjgl/3.3.3/lwjgl-3.3.3-natives-windows-x86.jar!/]
+2026-10-30T13:20:09.337637Z main WARN Advanced terminal features are not available in this environment
+[21:20:09] [main/INFO] [cp.mo.mo.Launcher/MODLAUNCHER]: ModLauncher running: args [--launchTarget, forge_client, --username, Tester, --version, 1.21.4-forge-54.1.22, --gameDir, D:\Temp\opencode\shared-live\instances\crash-forge-skips-broken-mod\.minecraft, --assetsDir, D:\Temp\opencode\shared-live\cache\assets, --assetIndex, 19, --uuid, 069a79f444e94726a5befca90e38aaf5, --accessToken, **********, --clientId, , --xuid, 0, --userType, msa, --versionType, release, --quickPlayPath, D:\Temp\opencode\shared-live\instances\crash-forge-skips-broken-mod\.minecraft\quickPlay]
+[21:20:09] [main/INFO] [cp.mo.mo.Launcher/MODLAUNCHER]: JVM identified as Microsoft OpenJDK 64-Bit Server VM 21.0.8+9-LTS
+[21:20:09] [main/INFO] [cp.mo.mo.Launcher/MODLAUNCHER]: ModLauncher 10.2.4 starting: java version 21.0.8 by Microsoft; OS Windows 11 arch amd64 version 10.0
+[21:20:09] [main/INFO] [ne.mi.fm.lo.ImmediateWindowHandler/]: Loading ImmediateWindowProvider fmlearlywindow
+[21:20:10] [main/INFO] [EARLYDISPLAY/]: Trying GL version 4.6
+[21:20:10] [main/INFO] [EARLYDISPLAY/]: Requested GL version 4.6 got version 4.6
+[21:20:10] [main/INFO] [mixin/]: SpongePowered MIXIN Subsystem Version=0.8.7 Source=jar:file:///D:/Temp/opencode/shared-live/cache/libraries/org/spongepowered/mixin/0.8.7/mixin-0.8.7.jar!/ Service=ModLauncher Env=CLIENT
+[21:20:10] [EarlyDisplay/INFO] [EARLYDISPLAY/]: GL info: Intel(R) RaptorLake-S Mobile Graphics Controller GL version 4.6.0 - Build 32.0.101.6881, Intel
+[21:20:10] [main/ERROR] [ne.mi.fm.lo.mo.AbstractModProvider/]: Failed to parse D:\Temp\opencode\shared-live\instances\crash-forge-skips-broken-mod\.minecraft\mods\jei-1.20.1-forge-15.74.0.230.jar module-info
+java.lang.module.InvalidModuleDescriptorException: Package org.apache.lucene.search.comparators not found in module
+	at java.base/jdk.internal.module.ModuleInfo.invalidModuleDescriptor(ModuleInfo.java:1216) ~[?:?]
+	at java.base/jdk.internal.module.ModuleInfo.doRead(ModuleInfo.java:330) ~[?:?]
+	at java.base/jdk.internal.module.ModuleInfo.read(ModuleInfo.java:129) ~[?:?]
+	at java.base/java.lang.module.ModuleDescriptor.read(ModuleDescriptor.java:2524) ~[?:?]
+	at SECURE-BOOTSTRAP/net.minecraftforge.fmlloader@1.21.4-54.1.22/net.minecraftforge.fml.loading.moddiscovery.AbstractModProvider.loadMetaFromJar(AbstractModProvider.java:94) ~[fmlloader-1.21.4-54.1.22.jar!/:?]
+	at SECURE-BOOTSTRAP/net.minecraftforge.fmlloader@1.21.4-54.1.22/net.minecraftforge.fml.loading.moddiscovery.AbstractModProvider.lambda$createMod$0(AbstractModProvider.java:60) ~[fmlloader-1.21.4-54.1.22.jar!/:?]
+	at cpw.mods.securejarhandler/cpw.mods.jarhandling.impl.Jar.<init>(Jar.java:95) ~[securemodules-2.2.24.jar!/:?]
+	at cpw.mods.securejarhandler/cpw.mods.jarhandling.impl.Jar.<init>(Jar.java:72) ~[securemodules-2.2.24.jar!/:?]
+	at cpw.mods.securejarhandler/cpw.mods.jarhandling.SecureJar.from(SecureJar.java:64) ~[securemodules-2.2.24.jar!/:?]
+	at cpw.mods.securejarhandler/cpw.mods.jarhandling.SecureJar.from(SecureJar.java:60) ~[securemodules-2.2.24.jar!/:?]
+	at SECURE-BOOTSTRAP/net.minecraftforge.fmlloader@1.21.4-54.1.22/net.minecraftforge.fml.loading.moddiscovery.AbstractModProvider.createMod(AbstractModProvider.java:60) ~[fmlloader-1.21.4-54.1.22.jar!/:?]
+	at SECURE-BOOTSTRAP/net.minecraftforge.fmlloader@1.21.4-54.1.22/net.minecraftforge.fml.loading.moddiscovery.AbstractModProvider.createMod(AbstractModProvider.java:52) ~[fmlloader-1.21.4-54.1.22.jar!/:?]
+	at SECURE-BOOTSTRAP/net.minecraftforge.fmlloader@1.21.4-54.1.22/net.minecraftforge.fml.loading.moddiscovery.ModsFolderLocator.scanMods(ModsFolderLocator.java:53) ~[fmlloader-1.21.4-54.1.22.jar!/:?]
+	at SECURE-BOOTSTRAP/net.minecraftforge.fmlloader@1.21.4-54.1.22/net.minecraftforge.fml.loading.moddiscovery.ModDiscoverer.discoverMods(ModDiscoverer.java:85) ~[fmlloader-1.21.4-54.1.22.jar!/:?]
+	at SECURE-BOOTSTRAP/net.minecraftforge.fmlloader@1.21.4-54.1.22/net.minecraftforge.fml.loading.FMLLoader.beginModScan(FMLLoader.java:152) ~[fmlloader-1.21.4-54.1.22.jar!/:54.1.22]
+	at SECURE-BOOTSTRAP/net.minecraftforge.fmlloader@1.21.4-54.1.22/net.minecraftforge.fml.loading.FMLServiceProvider.beginScanning(FMLServiceProvider.java:57) ~[fmlloader-1.21.4-54.1.22.jar!/:54.1.22]
+	at SECURE-BOOTSTRAP/cpw.mods.modlauncher@10.2.4/cpw.mods.modlauncher.TransformationServiceDecorator.runScan(TransformationServiceDecorator.java:98) ~[modlauncher-10.2.4.jar!/:?]
+	at SECURE-BOOTSTRAP/cpw.mods.modlauncher@10.2.4/cpw.mods.modlauncher.TransformationServicesHandler.lambda$runScanningTransformationServices$4(TransformationServicesHandler.java:100) ~[modlauncher-10.2.4.jar!/:?]
+	at java.base/java.util.stream.ReferencePipeline$3$1.accept(ReferencePipeline.java:197) [?:?]
+	at java.base/java.util.HashMap$ValueSpliterator.forEachRemaining(HashMap.java:1787) [?:?]
+	at java.base/java.util.stream.AbstractPipeline.copyInto(AbstractPipeline.java:509) [?:?]
+	at java.base/java.util.stream.AbstractPipeline.wrapAndCopyInto(AbstractPipeline.java:499) [?:?]
+	at java.base/java.util.stream.AbstractPipeline.evaluate(AbstractPipeline.java:575) [?:?]
+	at java.base/java.util.stream.AbstractPipeline.evaluateToArrayNode(AbstractPipeline.java:260) [?:?]
+	at java.base/java.util.stream.ReferencePipeline.toArray(ReferencePipeline.java:616) [?:?]
+	at java.base/java.util.stream.ReferencePipeline.toArray(ReferencePipeline.java:622) [?:?]
+	at java.base/java.util.stream.ReferencePipeline.toList(ReferencePipeline.java:627) [?:?]
+	at SECURE-BOOTSTRAP/cpw.mods.modlauncher@10.2.4/cpw.mods.modlauncher.TransformationServicesHandler.runScanningTransformationServices(TransformationServicesHandler.java:102) [modlauncher-10.2.4.jar!/:?]
+	at SECURE-BOOTSTRAP/cpw.mods.modlauncher@10.2.4/cpw.mods.modlauncher.TransformationServicesHandler.initializeTransformationServices(TransformationServicesHandler.java:49) [modlauncher-10.2.4.jar!/:?]
+	at SECURE-BOOTSTRAP/cpw.mods.modlauncher@10.2.4/cpw.mods.modlauncher.Launcher.run(Launcher.java:88) [modlauncher-10.2.4.jar!/:?]
+	at SECURE-BOOTSTRAP/cpw.mods.modlauncher@10.2.4/cpw.mods.modlauncher.Launcher.main(Launcher.java:75) [modlauncher-10.2.4.jar!/:?]
+	at SECURE-BOOTSTRAP/cpw.mods.modlauncher@10.2.4/cpw.mods.modlauncher.BootstrapEntry.main(BootstrapEntry.java:17) [modlauncher-10.2.4.jar!/:?]
+	at net.minecraftforge.bootstrap@2.1.7/net.minecraftforge.bootstrap.Bootstrap.moduleMain(Bootstrap.java:188) [bootstrap-2.1.8.jar!/:?]
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:103) ~[?:?]
+	at java.base/java.lang.reflect.Method.invoke(Method.java:580) ~[?:?]
+	at net.minecraftforge.bootstrap.Bootstrap.bootstrapMain(Bootstrap.java:133) [bootstrap-2.1.8.jar:2.1.8]
+	at net.minecraftforge.bootstrap.Bootstrap.start(Bootstrap.java:53) [bootstrap-2.1.8.jar:2.1.8]
+	at net.minecraftforge.bootstrap.ForgeBootstrap.main(ForgeBootstrap.java:19) [bootstrap-2.1.8.jar:2.1.8]
+[21:20:10] [main/INFO] [ne.mi.fm.lo.mo.JarInJarDependencyLocator/]: No dependencies to load found. Skipping!
+[21:20:12] [main/INFO] [cp.mo.mo.LaunchServiceHandler/MODLAUNCHER]: Launching target 'forge_client' with arguments [--version, 1.21.4-forge-54.1.22, --gameDir, D:\Temp\opencode\shared-live\instances\crash-forge-skips-broken-mod\.minecraft, --assetsDir, D:\Temp\opencode\shared-live\cache\assets, --uuid, 069a79f444e94726a5befca90e38aaf5, --username, Tester, --assetIndex, 19, --accessToken, **********, --clientId, , --xuid, 0, --userType, msa, --versionType, release, --quickPlayPath, D:\Temp\opencode\shared-live\instances\crash-forge-skips-broken-mod\.minecraft\quickPlay]
+[21:20:14] [Datafixer Bootstrap/INFO] [mojang/DataFixerBuilder]: 243 Datafixer optimizations took 412 milliseconds
+[21:20:20] [Render thread/INFO] [mojang/YggdrasilAuthenticationService]: Environment: Environment[sessionHost=https://sessionserver.mojang.com, servicesHost=https://api.minecraftservices.com, name=PROD]
+[21:20:20] [Render thread/INFO] [minecraft/Minecraft]: Setting user: Tester
