@@ -299,6 +299,19 @@ jobs:
           # 更新器的 endpoints 就指向这个 release 里的 latest.json
           args: ${{ matrix.args }} ${{ steps.updater.outputs.args }}
 
+      - name: verify Windows installation, window and uninstallation
+        if: matrix.platform == 'windows-latest'
+        timeout-minutes: 5
+        shell: pwsh
+        run: ./src-tauri/tests/windows-installer.ps1
+
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'windows-latest'
+        with:
+          name: windows-installer-acceptance
+          path: ${{ runner.temp }}/compass-installer-acceptance.json
+          if-no-files-found: ignore
+
 
   checksums:
     name: release asset checksums
