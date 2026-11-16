@@ -254,6 +254,26 @@ jobs:
           fi
           node -e 'require("node:fs").writeFileSync(require("node:path").join(process.env.RUNNER_TEMP,"compass-updater.json"),JSON.stringify({bundle:{createUpdaterArtifacts:true},plugins:{updater:{endpoints:["https://github.com/"+process.env.GITHUB_REPOSITORY+"/releases/latest/download/latest.json"],pubkey:process.env.UPDATER_PUBKEY}}}))'
           echo "args=--config \"$RUNNER_TEMP/compass-updater.json\"" >> "$GITHUB_OUTPUT"
+      - name: configure Apple signing when provided
+        if: matrix.platform == 'macos-latest'
+        shell: bash
+        env:
+          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
+          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+        run: |
+          node --input-type=module <<'NODE'
+          import { appendFileSync } from 'node:fs';
+          import { randomUUID } from 'node:crypto';
+          for (const [key, value] of Object.entries(process.env)) {
+            if (!key.startsWith('APPLE_') || !value) continue;
+            const delimiter = randomUUID();
+            appendFileSync(process.env.GITHUB_ENV, `${key}<<${delimiter}\n${value}\n${delimiter}\n`);
+          }
+          NODE
       - uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -265,14 +285,6 @@ jobs:
           # （settings 页的 update_configured 走的就是这条判断）。
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
-          # macOS 签名与公证需要配齐相应 secrets；部分配置可能导致签名或公证失败。
-          # 未签名包在 macOS 上要"右键打开"，这件事写在安装文档里，不靠用户自己撞。
-          APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
-          APPLE_SIGNING_IDENTITY: ${{ secrets.APPLE_SIGNING_IDENTITY }}
-          APPLE_ID: ${{ secrets.APPLE_ID }}
-          APPLE_PASSWORD: ${{ secrets.APPLE_PASSWORD }}
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
         with:
           tagName: ${{ steps.tagname.outputs.tag }}
           releaseName: "Mythic Compass __VERSION__"

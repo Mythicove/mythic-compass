@@ -32,8 +32,8 @@
     "publisher": "Mythicove",
     "homepage": "https://docs.mythicove.com",
     "category": "Game",
-    "shortDescription": "Mythicove 的 Minecraft 启动器",
-    "longDescription": "Mythic Compass 是 Mythicove 生态的启动器：原生启动 Minecraft（自解析版本/资源/库）、多实例管理、mod 与整合包安装、对接 Mythic Mirror 的皮肤与账号体系。",
+    "shortDescription": "Minecraft launcher for Mythicove",
+    "longDescription": "Mythic Compass provides native Minecraft launching, instance management, mod and modpack installation, and Mythic Mirror accounts and skins.",
     "copyright": "Copyright (c) Mythicove",
     "license": "Elastic-License-2.0",
     "icon": [
@@ -47,7 +47,7 @@
       {
         "ext": ["mrpack"],
         "name": "Modrinth Modpack",
-        "description": "Modrinth 整合包（.mrpack）",
+        "description": "Modrinth modpack (.mrpack)",
         "mimeType": "application/x-modrinth-modpack+zip",
         "role": "Editor"
       }
