@@ -335,7 +335,7 @@ mod tests {
         let http = reqwest::Client::new();
         let inst = Installer::new(
             MetaClient::new(http.clone(), ""),
-            Downloader::new(http, 8, ""),
+            Downloader::new(http, 8, "", &paths),
             paths,
         );
         (dir, inst)

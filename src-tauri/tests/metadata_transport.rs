@@ -7,6 +7,7 @@ use compass_lib::api::{ApiClient, http_client};
 use compass_lib::error::Error;
 use compass_lib::meta::{ManifestEntry, MetaClient};
 use compass_lib::net::{Downloader, FileTask};
+use compass_lib::paths::Paths;
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
@@ -65,7 +66,9 @@ async fn independent_downloaders_share_one_cache_writer() {
     let server =
         Server::start_with_delay(vec![response(200, &body)], Duration::from_millis(100)).await;
     let directory = tempfile::tempdir().unwrap();
-    let destination = directory.path().join("mods/shared.jar");
+    let paths = Paths::new(directory.path());
+    let game = directory.path().join("game");
+    let destination = game.join("mods/shared.jar");
     let task = FileTask {
         url: server.url.clone(),
         dest: destination.clone(),
@@ -73,8 +76,8 @@ async fn independent_downloaders_share_one_cache_writer() {
         size: body.len() as u64,
     };
     let http = http_client().unwrap();
-    let first = Downloader::new(http.clone(), 4, "");
-    let second = Downloader::new(http, 4, "");
+    let first = Downloader::new(http.clone(), 4, "", &paths);
+    let second = Downloader::new(http, 4, "", &paths);
     let (a, b) = tokio::join!(
         first.download_all(vec![task.clone(); 4], None),
         second.download_all(vec![task.clone(); 4], None),
@@ -100,13 +103,14 @@ async fn independent_downloaders_share_one_cache_writer() {
         body.as_bytes()
     );
     assert!(!task.part_path().exists());
+    assert_eq!(std::fs::read_dir(game.join("mods")).unwrap().count(), 1);
     assert_eq!(
-        compass_lib::content::scan(directory.path(), compass_lib::content::Kind::Mods).len(),
+        compass_lib::content::scan(&game, compass_lib::content::Kind::Mods).len(),
         1
     );
     let export = tempfile::tempdir().unwrap();
     assert_eq!(
-        compass_lib::archive::zip_dir(directory.path(), &export.path().join("instance.zip"), &[])
+        compass_lib::archive::zip_dir(&game, &export.path().join("instance.zip"), &[])
             .unwrap()
             .files,
         1
@@ -126,7 +130,8 @@ async fn cancelled_download_releases_cache_ownership() {
         size: body.len() as u64,
     };
     let http = http_client().unwrap();
-    let first = Downloader::new(http.clone(), 1, "");
+    let paths = Paths::new(directory.path());
+    let first = Downloader::new(http.clone(), 1, "", &paths);
     let first_task = task.clone();
     let running = tokio::spawn(async move { first.download_all(vec![first_task], None).await });
     tokio::time::timeout(Duration::from_secs(5), async {
@@ -138,7 +143,7 @@ async fn cancelled_download_releases_cache_ownership() {
     .unwrap();
     running.abort();
     assert!(running.await.unwrap_err().is_cancelled());
-    let next = Downloader::new(http, 1, "");
+    let next = Downloader::new(http, 1, "", &paths);
     let summary = tokio::time::timeout(
         Duration::from_secs(5),
         next.download_all(vec![task.clone()], None),
@@ -266,7 +271,7 @@ async fn downloads_the_real_forge_installer_from_its_root_alias() {
         sha1: "c445499201106cd56123029315a8e53228ea677b".into(),
         size: 9_111_901,
     };
-    let summary = Downloader::new(http_client().unwrap(), 1, "")
+    let summary = Downloader::new(http_client().unwrap(), 1, "", &Paths::new(directory.path()))
         .download_all(vec![task], None)
         .await;
     assert!(summary.failed.is_empty(), "{:?}", summary.failed);

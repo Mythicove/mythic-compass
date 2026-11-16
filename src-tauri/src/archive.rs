@@ -21,10 +21,7 @@ pub const SKIP_DIRS: [&str; 4] = ["natives", "logs", "crash-reports", "quickPlay
 
 /// 跳过的文件：JVM 崩溃转储、编辑器临时文件、macOS 元数据。
 pub fn skip_file(name: &str) -> bool {
-    name.starts_with("hs_err_pid")
-        || name.ends_with(".tmp")
-        || name == ".DS_Store"
-        || name.ends_with(crate::paths::DOWNLOAD_LOCK_SUFFIX)
+    name.starts_with("hs_err_pid") || name.ends_with(".tmp") || name == ".DS_Store"
 }
 
 /// 导出结果（UI 报"导出了多少个文件、多大"）。

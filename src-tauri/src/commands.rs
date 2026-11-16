@@ -549,6 +549,7 @@ pub async fn hoard_install(
         state.http.clone(),
         cfg.download.concurrency,
         cfg.download.mirror.clone(),
+        &state.paths,
     );
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
     let emitter = app.clone();
@@ -696,6 +697,7 @@ pub async fn install_version(
         state.http.clone(),
         cfg.download.concurrency,
         cfg.download.mirror.clone(),
+        &state.paths,
     );
     let installer = Installer::new(meta, dl, state.paths.clone());
 
@@ -946,6 +948,7 @@ pub async fn modpack_install(
         state.http.clone(),
         cfg.download.concurrency,
         cfg.download.mirror.clone(),
+        &state.paths,
     );
     let installer = Installer::new(
         MetaClient::new(state.http.clone(), cfg.download.mirror.clone()),
@@ -1137,6 +1140,7 @@ pub async fn java_download(
         state.http.clone(),
         cfg.download.concurrency,
         cfg.download.mirror.clone(),
+        &state.paths,
     );
     let os = OsInfo::current();
     let paths = state.paths.clone();
@@ -1237,6 +1241,7 @@ pub async fn loader_install(
         state.http.clone(),
         cfg.download.concurrency,
         cfg.download.mirror.clone(),
+        &state.paths,
     );
     let installer = Installer::new(meta, dl, state.paths.clone());
 

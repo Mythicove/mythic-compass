@@ -22,7 +22,7 @@ async fn downloads_a_real_jre_and_it_actually_runs() {
     paths.ensure().unwrap();
     let http = live::http();
     let api = live::api(&http);
-    let dl = compass_lib::net::Downloader::new(http.clone(), 8, String::new());
+    let dl = compass_lib::net::Downloader::new(http.clone(), 8, String::new(), &paths);
     let os = OsInfo::current();
 
     // 这个平台得真有官方运行时，否则测的是"报错对不对"而不是"下载行不行"

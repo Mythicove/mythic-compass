@@ -62,7 +62,7 @@ pub fn api(http: &reqwest::Client) -> ApiClient {
 pub fn installer(paths: &Paths, http: &reqwest::Client) -> Installer {
     Installer::new(
         MetaClient::new(http.clone(), String::new()),
-        Downloader::new(http.clone(), 8, String::new()),
+        Downloader::new(http.clone(), 8, String::new(), paths),
         paths.clone(),
     )
 }

@@ -80,7 +80,7 @@ async fn installs_a_real_version_and_produces_a_consistent_launch_plan() {
     let mirror = std::env::var("COMPASS_SMOKE_MIRROR").unwrap_or_default();
     let installer = Installer::new(
         MetaClient::new(http.clone(), mirror.clone()),
-        Downloader::new(http.clone(), 16, mirror),
+        Downloader::new(http.clone(), 16, mirror, &paths),
         paths.clone(),
     );
 

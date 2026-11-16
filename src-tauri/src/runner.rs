@@ -222,6 +222,7 @@ async fn download_java(
         http.clone(),
         cfg.download.concurrency,
         cfg.download.mirror.clone(),
+        paths,
     );
     let got = javaget::install(&api, &dl, paths, &os, component, progress).await?;
     // 下完之后**用同一套挑选逻辑**再找一次，而不是自己比版本号：
@@ -272,6 +273,7 @@ pub async fn prepare_launch(
         http.clone(),
         cfg.download.concurrency,
         cfg.download.mirror.clone(),
+        paths,
     );
     let injector = authlibinjector::ensure(paths, &dl).await.ok();
     let prefetched = match &injector {

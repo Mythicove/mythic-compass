@@ -14,9 +14,6 @@ use crate::error::Error;
 /// 便携模式的标记文件名：放在可执行文件旁边，内容不重要（空文件即可）。
 pub const PORTABLE_MARKER: &str = "portable.txt";
 
-/// Persistent per-destination coordination files, excluded from instance copies and exports.
-pub(crate) const DOWNLOAD_LOCK_SUFFIX: &str = ".compass-download.lock";
-
 /// 便携模式的数据根目录：标记文件存在时是它旁边的 `data/`，否则 `None`。
 ///
 /// 用途是把整个启动器放进 U 盘或云同步目录里带着走。判断只看那个标记文件在不在，

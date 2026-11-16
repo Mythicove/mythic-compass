@@ -216,14 +216,21 @@ pub struct Downloader {
     http: reqwest::Client,
     concurrency: usize,
     mirror: Arc<str>,
+    locks: PathBuf,
 }
 
 impl Downloader {
-    pub fn new(http: reqwest::Client, concurrency: usize, mirror: impl Into<String>) -> Self {
+    pub fn new(
+        http: reqwest::Client,
+        concurrency: usize,
+        mirror: impl Into<String>,
+        paths: &crate::paths::Paths,
+    ) -> Self {
         Self {
             http,
             concurrency: concurrency.clamp(1, 64),
             mirror: Arc::from(mirror.into()),
+            locks: paths.cache().join("download-locks"),
         }
     }
 
@@ -274,22 +281,30 @@ impl Downloader {
         }
         let part = task.part_path();
 
-        // The destination is shared by independent installers and processes. Keep a stable,
-        // hidden lock inode: deleting it on release would let a new writer bypass existing waiters.
-        let mut lock_name = std::ffi::OsString::from(".");
-        lock_name.push(task.dest.file_name().ok_or_else(|| {
+        // Coordination belongs to the launcher cache, never to game content. Keep each lock
+        // file stable: deleting it on release would let new writers bypass existing waiters.
+        let name = task.dest.file_name().ok_or_else(|| {
             Error::Invalid(format!(
                 "download destination has no file name: {}",
                 task.dest.display()
             ))
-        })?);
-        lock_name.push(crate::paths::DOWNLOAD_LOCK_SUFFIX);
+        })?;
+        let parent = task
+            .dest
+            .parent()
+            .filter(|path| !path.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        let parent = tokio::fs::canonicalize(parent).await?;
+        let lock_dir = self.locks.join(hex::encode(Sha256::digest(
+            parent.as_os_str().as_encoded_bytes(),
+        )));
+        tokio::fs::create_dir_all(&lock_dir).await?;
         let lock = tokio::fs::OpenOptions::new()
             .create(true)
             .truncate(false)
             .read(true)
             .write(true)
-            .open(task.dest.with_file_name(lock_name))
+            .open(lock_dir.join(name))
             .await?
             .into_std()
             .await;
@@ -659,7 +674,9 @@ mod tests {
             "哈希不符的文件被当成已就位"
         );
 
-        let summary = downloader().download_all(vec![task.clone()], None).await;
+        let summary = downloader(dir.path())
+            .download_all(vec![task.clone()], None)
+            .await;
         assert_eq!(summary.failed, Vec::<String>::new());
         assert_eq!(summary.downloaded, 1, "应当重新下载而不是跳过");
         assert_eq!(tokio::fs::read(&dest).await.unwrap(), body);
@@ -739,8 +756,13 @@ mod tests {
         stream.flush().await
     }
 
-    fn downloader() -> Downloader {
-        Downloader::new(reqwest::Client::new(), 4, "")
+    fn downloader(root: &Path) -> Downloader {
+        Downloader::new(
+            reqwest::Client::new(),
+            4,
+            "",
+            &crate::paths::Paths::new(root),
+        )
     }
 
     #[tokio::test]
@@ -756,7 +778,9 @@ mod tests {
             size: body.len() as u64,
         };
 
-        let summary = downloader().download_all(vec![task.clone()], None).await;
+        let summary = downloader(dir.path())
+            .download_all(vec![task.clone()], None)
+            .await;
         assert_eq!(summary.failed, Vec::<String>::new());
         assert_eq!(summary.downloaded, 1);
         assert_eq!(summary.bytes, body.len() as u64);
@@ -764,7 +788,7 @@ mod tests {
         assert!(!task.part_path().exists(), ".part must be renamed away");
 
         // 再跑一次：已就位，不重复下载
-        let again = downloader().download_all(vec![task], None).await;
+        let again = downloader(dir.path()).download_all(vec![task], None).await;
         assert_eq!(again.downloaded, 0);
         assert_eq!(again.skipped, 1);
         assert_eq!(again.bytes, 0);
@@ -787,7 +811,7 @@ mod tests {
             sha1: sha1_hex(&body),
             size: body.len() as u64,
         };
-        let summary = downloader().download_all(vec![task], None).await;
+        let summary = downloader(dir.path()).download_all(vec![task], None).await;
         assert_eq!(summary.failed, Vec::<String>::new());
         assert_eq!(tokio::fs::read(&dest).await.unwrap(), body);
         assert_eq!(summary.bytes, (body.len() - 6) as u64, "只应补下缺的部分");
@@ -804,7 +828,7 @@ mod tests {
             sha1: "0".repeat(40),
             size: 0,
         };
-        let summary = downloader().download_all(vec![task], None).await;
+        let summary = downloader(dir.path()).download_all(vec![task], None).await;
         assert_eq!(summary.failed.len(), 1, "{summary:?}");
         // 关键：损坏文件既不能落到 dest，也不能留个 .part 冒充已下载
         assert!(!dest.exists());
@@ -824,7 +848,7 @@ mod tests {
             sha1: sha1_hex(&body),
             size: body.len() as u64,
         };
-        let summary = downloader().download_all(vec![task], None).await;
+        let summary = downloader(dir.path()).download_all(vec![task], None).await;
         assert_eq!(summary.failed, Vec::<String>::new(), "{summary:?}");
         assert_eq!(tokio::fs::read(&dest).await.unwrap(), body);
     }
@@ -846,7 +870,7 @@ mod tests {
             sha1: String::new(),
             size: 0,
         };
-        let summary = downloader()
+        let summary = downloader(dir.path())
             .download_all(vec![good.clone(), bad], None)
             .await;
         assert_eq!(summary.failed.len(), 1, "{summary:?}");
@@ -866,7 +890,9 @@ mod tests {
             sha1: String::new(),
             size: body.len() as u64,
         };
-        let summary = downloader().download_all(vec![task], Some(tx)).await;
+        let summary = downloader(dir.path())
+            .download_all(vec![task], Some(tx))
+            .await;
         assert_eq!(summary.failed, Vec::<String>::new());
         let mut last = 0;
         let mut events = 0;

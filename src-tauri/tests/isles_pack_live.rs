@@ -22,7 +22,7 @@ async fn published_pack_installs_and_initializes_a_real_client() {
     let api = api::ApiClient::new(http.clone());
     let installer = compass_lib::install::Installer::new(
         meta::MetaClient::new(http.clone(), String::new()),
-        net::Downloader::new(http.clone(), 16, String::new()),
+        net::Downloader::new(http.clone(), 16, String::new(), &paths),
         paths.clone(),
     );
     let info = modpack::inspect(&pack).unwrap();
