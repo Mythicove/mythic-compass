@@ -14,7 +14,7 @@ use futures_util::StreamExt;
 use serde::Serialize;
 use sha1::{Digest, Sha1};
 use sha2::Sha256;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::AsyncReadExt;
 use tokio::sync::Mutex;
 
 use crate::error::Error;
@@ -190,6 +190,22 @@ pub fn part_path(dest: &Path) -> PathBuf {
     PathBuf::from(s)
 }
 
+/// Blocking filesystem work can outlive its awaiting future. Retain the kernel lock in the
+/// actual IO job so cancellation cannot admit another writer before that work has finished.
+async fn artifact_io<T: Send + 'static>(
+    lock: &Arc<std::fs::File>,
+    work: impl FnOnce() -> std::io::Result<T> + Send + 'static,
+) -> Result<T, Error> {
+    let lock = Arc::clone(lock);
+    tokio::task::spawn_blocking(move || {
+        let _lock = lock;
+        work()
+    })
+    .await
+    .map_err(|error| Error::Io(std::io::Error::other(error)))?
+    .map_err(Error::Io)
+}
+
 /// 单个文件的下载进度（UI 用它画总进度与当前文件明细）。
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -317,8 +333,8 @@ impl Downloader {
                 Err(std::fs::TryLockError::Error(error)) => return Err(error.into()),
             }
         }
-        // Dropping the file releases the OS lock, including when this future is cancelled.
-        let _lock = lock;
+        // The last owner releases the lock; in-flight filesystem jobs retain it on cancellation.
+        let lock = Arc::new(lock);
         if Self::is_complete(task).await {
             return Ok(0);
         }
@@ -330,15 +346,18 @@ impl Downloader {
                 if attempt > 0 {
                     tokio::time::sleep(BACKOFF * attempt).await;
                 }
-                match self.attempt(&url, &part, task, progress).await {
+                match self.attempt(&url, &part, task, progress, &lock).await {
                     Ok(bytes) => {
                         // 校验不过就删掉重来：半截/损坏文件绝不能被当成"已下载"
                         if let Err(e) = verify(&part, task).await {
-                            let _ = tokio::fs::remove_file(&part).await;
+                            let bad = part.clone();
+                            let _ = artifact_io(&lock, move || std::fs::remove_file(bad)).await;
                             last_err = e;
                             continue;
                         }
-                        tokio::fs::rename(&part, &task.dest).await?;
+                        let source = part.clone();
+                        let destination = task.dest.clone();
+                        artifact_io(&lock, move || std::fs::rename(source, destination)).await?;
                         return Ok(bytes);
                     }
                     // 网络类错误保留 .part 以便下次续传
@@ -355,7 +374,9 @@ impl Downloader {
         part: &Path,
         task: &FileTask,
         progress: &Option<ProgressSink>,
+        lock: &Arc<std::fs::File>,
     ) -> Result<u64, Error> {
+        use std::io::Write;
         // 续传：已有 .part 就带 Range；服务端不支持（回 200）则从头写
         let have = tokio::fs::metadata(part)
             .await
@@ -388,20 +409,26 @@ impl Downloader {
             resume_from + res.content_length().unwrap_or(0)
         };
 
-        let mut file = if append {
-            tokio::fs::OpenOptions::new()
-                .append(true)
-                .open(part)
-                .await?
-        } else {
-            tokio::fs::File::create(part).await?
-        };
+        let path = part.to_owned();
+        let mut file = artifact_io(lock, move || {
+            if append {
+                std::fs::OpenOptions::new().append(true).open(path)
+            } else {
+                std::fs::File::create(path)
+            }
+        })
+        .await?;
         let mut written = written_start;
         let mut stream = res.bytes_stream();
         while let Some(chunk) = stream.next().await {
             let chunk = chunk?;
-            file.write_all(&chunk).await?;
-            written += chunk.len() as u64;
+            let bytes = chunk.len() as u64;
+            file = artifact_io(lock, move || {
+                file.write_all(&chunk)?;
+                Ok(file)
+            })
+            .await?;
+            written += bytes;
             if let Some(tx) = progress {
                 // 进度丢了不该让下载失败（订阅方可能已经关掉）
                 let _ = tx.send(FileProgress {
@@ -411,7 +438,7 @@ impl Downloader {
                 });
             }
         }
-        file.flush().await?;
+        artifact_io(lock, move || file.flush()).await?;
         // 本次实际传输的字节：从 written_start 起算。服务端对 Range 回 200（不支持续传）
         // 时 written_start=0 而 resume_from=have，减 resume_from 会下溢。
         Ok(written - written_start)
@@ -526,6 +553,7 @@ pub async fn sha256_of_file(path: &Path) -> Result<String, Error> {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicUsize, Ordering};
+    use tokio::io::AsyncWriteExt;
     use tokio::net::{TcpListener, TcpStream};
 
     fn sha1_hex(bytes: &[u8]) -> String {
