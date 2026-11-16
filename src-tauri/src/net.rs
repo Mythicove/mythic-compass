@@ -23,6 +23,88 @@ use crate::error::Error;
 const ATTEMPTS: u32 = 3;
 const BACKOFF: std::time::Duration = std::time::Duration::from_millis(500);
 
+/// Forge installer profiles still publish Maven root aliases. Use the explicit release repository
+/// on that same authority; the root alias can serve a cached 404 for an existing release artifact.
+fn repository_url(url: &url::Url) -> url::Url {
+    let mut canonical = url.clone();
+    if url.scheme() == "https"
+        && url.host_str() == Some("maven.minecraftforge.net")
+        // Keep the published aggregate index endpoint; normalize artifact URLs from profiles.
+        && !url.path().rsplit('/').next().is_some_and(|file| file.starts_with("maven-metadata."))
+        && !matches!(
+            url.path_segments().and_then(|mut segments| segments.next()),
+            Some("releases" | "snapshots")
+        )
+    {
+        canonical.set_path(&format!("/releases{}", url.path()));
+    }
+    canonical
+}
+
+/// Metadata is admitted only after its whole body has arrived. Keep headers for conditional GETs
+/// and original bytes for version-manifest digest verification.
+pub(crate) struct MetadataResponse {
+    pub status: u16,
+    pub headers: reqwest::header::HeaderMap,
+    pub body: Vec<u8>,
+}
+
+impl MetadataResponse {
+    pub fn text(&self) -> std::borrow::Cow<'_, str> {
+        String::from_utf8_lossy(&self.body)
+    }
+}
+
+/// Read-only metadata shares the downloader's finite attempt budget. Parsing and digest failures
+/// happen after transport and must not replay a request; authentication and writes never enter here.
+pub(crate) async fn metadata_get(
+    request: reqwest::RequestBuilder,
+) -> Result<MetadataResponse, Error> {
+    let (http, request) = request.build_split();
+    let mut request = request?;
+    if request.method() != reqwest::Method::GET {
+        return Err(Error::Invalid("metadata transport requires GET".into()));
+    }
+    let url = repository_url(request.url());
+    *request.url_mut() = url;
+    let mut attempt = 0;
+    loop {
+        let result = async {
+            let request = request
+                .try_clone()
+                .ok_or_else(|| Error::Invalid("metadata GET must have a replayable body".into()))?;
+            let response = http.execute(request).await?;
+            let status = response.status().as_u16();
+            let headers = response.headers().clone();
+            let body = response.bytes().await?.to_vec();
+            Ok(MetadataResponse {
+                status,
+                headers,
+                body,
+            })
+        }
+        .await;
+        attempt += 1;
+        let transient = match &result {
+            Ok(response) => matches!(response.status, 408 | 429 | 500 | 502 | 503 | 504),
+            Err(Error::Http(error)) => {
+                // Incomplete HTTP bodies can be wrapped as Decode errors by reqwest.
+                // Document parsing happens outside this transport function.
+                error.is_connect()
+                    || error.is_timeout()
+                    || error.is_request()
+                    || error.is_body()
+                    || error.is_decode()
+            }
+            Err(_) => false,
+        };
+        if !transient || attempt >= ATTEMPTS {
+            return result;
+        }
+        tokio::time::sleep(BACKOFF * attempt).await;
+    }
+}
+
 /// 官方源主机 → 它在镜像上的路径前缀。不在表里的主机（maven.fabricmc.net、
 /// maven.neoforged.net、GitHub release 等）**一律不改写**：镜像并不代管它们，
 /// 改写了只会把一个能用的 URL 变成 404。
@@ -73,11 +155,14 @@ pub fn rewrite_mirror(url: &str, mirror: &str) -> String {
 ///
 /// 非官方源（Fabric/NeoForge 的 Maven、GitHub release）既不改写也不回退——它们只有一个来源。
 pub fn candidate_urls(url: &str, mirror: &str) -> Vec<String> {
-    let rewritten = rewrite_mirror(url, mirror);
-    if rewritten == url {
-        vec![url.to_string()]
+    let canonical = url::Url::parse(url)
+        .map(|url| repository_url(&url).to_string())
+        .unwrap_or_else(|_| url.to_string());
+    let rewritten = rewrite_mirror(&canonical, mirror);
+    if rewritten == canonical {
+        vec![canonical]
     } else {
-        vec![rewritten, url.to_string()]
+        vec![rewritten, canonical]
     }
 }
 
@@ -331,7 +416,7 @@ impl Downloader {
                     Err(e) => {
                         // 报**实际请求的 URL**：配了镜像时只显示原始域名的话，
                         // 用户根本没法判断是源站坏了还是镜像坏了。
-                        let effective = rewrite_mirror(&task.url, &this.mirror);
+                        let effective = candidate_urls(&task.url, &this.mirror).join(" -> ");
                         let label = if effective == task.url {
                             task.url.clone()
                         } else {
@@ -495,6 +580,23 @@ mod tests {
             candidate_urls("https://maven.fabricmc.net/net/fabricmc/x.jar", m),
             vec!["https://maven.fabricmc.net/net/fabricmc/x.jar".to_string()]
         );
+    }
+
+    #[test]
+    fn forge_profile_urls_use_the_explicit_release_repository() {
+        let artifact = "net/minecraftforge/fmlloader/1.21.4-54.1.22/fmlloader-1.21.4-54.1.22.jar";
+        let alias = format!("https://maven.minecraftforge.net/{artifact}?download=1");
+        let explicit = format!("https://maven.minecraftforge.net/releases/{artifact}?download=1");
+        assert_eq!(candidate_urls(&alias, ""), vec![explicit.clone()]);
+        assert_eq!(candidate_urls(&explicit, ""), vec![explicit]);
+        let snapshot = "https://maven.minecraftforge.net/snapshots/net/example/library.jar";
+        assert_eq!(candidate_urls(snapshot, ""), vec![snapshot.to_string()]);
+        let index = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml";
+        assert_eq!(candidate_urls(index, ""), vec![index.to_string()]);
+        let other = format!("https://maven.neoforged.net/{artifact}");
+        assert_eq!(candidate_urls(&other, ""), vec![other.clone()]);
+        let spoof = format!("https://maven.minecraftforge.net.example/{artifact}");
+        assert_eq!(candidate_urls(&spoof, ""), vec![spoof.clone()]);
     }
 
     #[test]

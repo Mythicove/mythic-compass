@@ -306,19 +306,19 @@ impl ApiClient {
     /// GET 一个 JSON 端点。状态码处理与解码只在这一处，
     /// 免得每个新数据源（loader meta、整合包源）各写一遍而漏掉非 2xx。
     pub async fn get_json<T: for<'de> Deserialize<'de>>(&self, url: &str) -> Result<T, Error> {
-        let res = self.http.get(url).send().await?;
-        self.json_or_error(res).await
+        let text = self.get_text(url).await?;
+        serde_json::from_str(&text).map_err(|e| Error::Config(format!("decode {url}: {e}")))
     }
 
     /// GET 一个纯文本端点（Maven 的 `maven-metadata.xml` 与 `.sha1` 都是文本）。
     pub async fn get_text(&self, url: &str) -> Result<String, Error> {
-        let res = self.http.get(url).send().await?;
-        let status = res.status().as_u16();
-        let text = res.text().await?;
+        let res = crate::net::metadata_get(self.http.get(url)).await?;
+        let status = res.status;
+        let text = res.text();
         if !(200..300).contains(&status) {
             return Err(api_error(status, &text));
         }
-        Ok(text)
+        Ok(text.into_owned())
     }
 }
 

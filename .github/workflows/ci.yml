@@ -146,6 +146,10 @@ jobs:
           COMPASS_NEOFORGE_DIR: ${{ runner.temp }}/compass-live
         run: cargo test --test neoforge_live -- --ignored --nocapture installs_neoforge_for_real
 
+      - name: download a real Forge installer and verify SHA-1
+        working-directory: src-tauri
+        run: cargo test --test metadata_transport -- --ignored --nocapture downloads_the_real_forge_installer_from_its_root_alias
+
       - name: install a real Forge version (bundled artifacts, no module path)
         working-directory: src-tauri
         # Forge 与 NeoForge 不是一套东西，不能靠"NeoForge 通了"推过来（都是实测差异）：

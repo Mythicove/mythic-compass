@@ -96,8 +96,8 @@ struct Validators {
     last_modified: String,
 }
 
-fn header(res: &reqwest::Response, name: &str) -> String {
-    res.headers()
+fn header(res: &crate::net::MetadataResponse, name: &str) -> String {
+    res.headers
         .get(name)
         .and_then(|v| v.to_str().ok())
         .unwrap_or_default()
@@ -150,17 +150,14 @@ impl MetaClient {
     }
 
     pub async fn text(&self, url: &str) -> Result<String, Error> {
-        let res = self
-            .http
-            .get(rewrite_mirror(url, &self.mirror))
-            .send()
-            .await?;
-        let status = res.status().as_u16();
-        let body = res.text().await?;
+        let res =
+            crate::net::metadata_get(self.http.get(rewrite_mirror(url, &self.mirror))).await?;
+        let status = res.status;
+        let body = res.text();
         if !(200..300).contains(&status) {
             return Err(api_error(status, &body));
         }
-        Ok(body)
+        Ok(body.into_owned())
     }
 
     pub async fn manifest(&self) -> Result<VersionManifest, Error> {
@@ -202,8 +199,8 @@ impl MetaClient {
         if !validators.last_modified.is_empty() {
             req = req.header("If-Modified-Since", &validators.last_modified);
         }
-        let res = req.send().await?;
-        let status = res.status().as_u16();
+        let res = crate::net::metadata_get(req).await?;
+        let status = res.status;
 
         if status == 304 {
             if let Ok(text) = fs::read_to_string(&body_file)
@@ -219,15 +216,14 @@ impl MetaClient {
                 .await;
         }
         if !(200..300).contains(&status) {
-            let body = res.text().await.unwrap_or_default();
+            let body = res.text();
             return Err(api_error(status, &body));
         }
-        // 响应头必须在消费 body **之前**取：`res.text()` 之后 res 就没了
         let next = Validators {
             etag: header(&res, "etag"),
             last_modified: header(&res, "last-modified"),
         };
-        let text = res.text().await?;
+        let text = res.text();
         store_manifest(&body_file, &validator_file, &text, &next)
     }
 
@@ -237,17 +233,17 @@ impl MetaClient {
         body_file: &std::path::Path,
         validator_file: &std::path::Path,
     ) -> Result<VersionManifest, Error> {
-        let res = self
-            .http
-            .get(rewrite_mirror(VERSION_MANIFEST_URL, &self.mirror))
-            .send()
-            .await?;
-        let status = res.status().as_u16();
+        let res = crate::net::metadata_get(
+            self.http
+                .get(rewrite_mirror(VERSION_MANIFEST_URL, &self.mirror)),
+        )
+        .await?;
+        let status = res.status;
         let next = Validators {
             etag: header(&res, "etag"),
             last_modified: header(&res, "last-modified"),
         };
-        let text = res.text().await?;
+        let text = res.text();
         if !(200..300).contains(&status) {
             return Err(api_error(status, &text));
         }
@@ -264,9 +260,9 @@ impl MetaClient {
     /// 下载什么、把什么放进 classpath，是整条安装链的信任根。
     pub async fn version_for(&self, entry: &ManifestEntry) -> Result<VersionJson, Error> {
         let url = rewrite_mirror(&entry.url, &self.mirror);
-        let res = self.http.get(&url).send().await?;
-        let status = res.status().as_u16();
-        let bytes = res.bytes().await?;
+        let res = crate::net::metadata_get(self.http.get(&url)).await?;
+        let status = res.status;
+        let bytes = res.body;
         if !(200..300).contains(&status) {
             return Err(api_error(status, &String::from_utf8_lossy(&bytes)));
         }
