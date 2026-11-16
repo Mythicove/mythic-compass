@@ -274,6 +274,40 @@ impl Downloader {
         }
         let part = task.part_path();
 
+        // The destination is shared by independent installers and processes. Keep a stable,
+        // hidden lock inode: deleting it on release would let a new writer bypass existing waiters.
+        let mut lock_name = std::ffi::OsString::from(".");
+        lock_name.push(task.dest.file_name().ok_or_else(|| {
+            Error::Invalid(format!(
+                "download destination has no file name: {}",
+                task.dest.display()
+            ))
+        })?);
+        lock_name.push(crate::paths::DOWNLOAD_LOCK_SUFFIX);
+        let lock = tokio::fs::OpenOptions::new()
+            .create(true)
+            .truncate(false)
+            .read(true)
+            .write(true)
+            .open(task.dest.with_file_name(lock_name))
+            .await?
+            .into_std()
+            .await;
+        loop {
+            match lock.try_lock() {
+                Ok(()) => break,
+                Err(std::fs::TryLockError::WouldBlock) => {
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+                Err(std::fs::TryLockError::Error(error)) => return Err(error.into()),
+            }
+        }
+        // Dropping the file releases the OS lock, including when this future is cancelled.
+        let _lock = lock;
+        if Self::is_complete(task).await {
+            return Ok(0);
+        }
+
         let mut last_err = Error::Config("download failed".into());
         // 镜像优先，失败退回官方源（见 candidate_urls 的理由）
         for url in candidate_urls(&task.url, &self.mirror) {
@@ -289,34 +323,8 @@ impl Downloader {
                             last_err = e;
                             continue;
                         }
-                        match tokio::fs::rename(&part, &task.dest).await {
-                            Ok(()) => {
-                                // **改名之后还要再校验一次**。共用 .part 的窗口里，
-                                // 另一方可能在我们校验通过之后、改名之前把它截断重写，
-                                // 于是 dest 落地的是半截内容——而它已经"校验通过"了。
-                                // 这种坏文件会被当成已下载，症状推迟到启动时变成
-                                // 一句看不出来源的 ClassNotFoundException / zip 损坏。
-                                if let Err(e) = verify(&task.dest, task).await {
-                                    let _ = tokio::fs::remove_file(&task.dest).await;
-                                    let _ = tokio::fs::remove_file(&part).await;
-                                    last_err = e;
-                                    continue;
-                                }
-                                return Ok(bytes);
-                            }
-                            // `.part` 的名字是按 dest 定的（断点续装要靠它稳定），
-                            // 所以两个安装同时下同一个库时会共用一个 .part：
-                            // 一方改名成功后，另一方的 rename 就 ENOENT。
-                            // 这时 dest 已经在了——校验通过就是成功，不是失败。
-                            // （CI 上三平台里两个平台就是这么红的，而本地串行跑永远碰不到。）
-                            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                                if Self::is_complete(task).await {
-                                    return Ok(0);
-                                }
-                                last_err = Error::Io(e);
-                            }
-                            Err(e) => return Err(Error::Io(e)),
-                        }
+                        tokio::fs::rename(&part, &task.dest).await?;
+                        return Ok(bytes);
                     }
                     // 网络类错误保留 .part 以便下次续传
                     Err(e) => last_err = e,

@@ -1,6 +1,7 @@
 //! Metadata GETs must recover transient transport failures without replaying writes.
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
+use std::time::Duration;
 
 use compass_lib::api::{ApiClient, http_client};
 use compass_lib::error::Error;
@@ -18,6 +19,10 @@ struct Server {
 
 impl Server {
     async fn start(responses: Vec<String>) -> Self {
+        Self::start_with_delay(responses, Duration::ZERO).await
+    }
+
+    async fn start_with_delay(responses: Vec<String>, delay: Duration) -> Self {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let url = format!("http://{}", listener.local_addr().unwrap());
         let requests = Arc::new(AtomicUsize::new(0));
@@ -37,6 +42,7 @@ impl Server {
                 }
                 let index = observed.fetch_add(1, Ordering::SeqCst);
                 let response = &responses[index.min(responses.len() - 1)];
+                tokio::time::sleep(delay).await;
                 let _ = stream.write_all(response.as_bytes()).await;
                 let _ = stream.shutdown().await;
             }
@@ -51,6 +57,96 @@ impl Server {
     fn count(&self) -> usize {
         self.requests.load(Ordering::SeqCst)
     }
+}
+
+#[tokio::test]
+async fn independent_downloaders_share_one_cache_writer() {
+    let body = "shared Minecraft library bytes\n".repeat(8192);
+    let server =
+        Server::start_with_delay(vec![response(200, &body)], Duration::from_millis(100)).await;
+    let directory = tempfile::tempdir().unwrap();
+    let destination = directory.path().join("mods/shared.jar");
+    let task = FileTask {
+        url: server.url.clone(),
+        dest: destination.clone(),
+        sha1: hex::encode(Sha1::digest(body.as_bytes())),
+        size: body.len() as u64,
+    };
+    let http = http_client().unwrap();
+    let first = Downloader::new(http.clone(), 4, "");
+    let second = Downloader::new(http, 4, "");
+    let (a, b) = tokio::join!(
+        first.download_all(vec![task.clone(); 4], None),
+        second.download_all(vec![task.clone(); 4], None),
+    );
+    println!(
+        "cache requests={} downloaded={} skipped={} failures={:?}/{:?}",
+        server.count(),
+        a.downloaded + b.downloaded,
+        a.skipped + b.skipped,
+        a.failed,
+        b.failed
+    );
+    assert!(a.failed.is_empty() && b.failed.is_empty());
+    assert_eq!(
+        server.count(),
+        1,
+        "one cache destination must have one writer"
+    );
+    assert_eq!(a.downloaded + b.downloaded, 1);
+    assert_eq!(a.skipped + b.skipped, 7);
+    assert_eq!(
+        tokio::fs::read(&destination).await.unwrap(),
+        body.as_bytes()
+    );
+    assert!(!task.part_path().exists());
+    assert_eq!(
+        compass_lib::content::scan(directory.path(), compass_lib::content::Kind::Mods).len(),
+        1
+    );
+    let export = tempfile::tempdir().unwrap();
+    assert_eq!(
+        compass_lib::archive::zip_dir(directory.path(), &export.path().join("instance.zip"), &[])
+            .unwrap()
+            .files,
+        1
+    );
+}
+
+#[tokio::test]
+async fn cancelled_download_releases_cache_ownership() {
+    let body = "library bytes after cancellation";
+    let server =
+        Server::start_with_delay(vec![response(200, body)], Duration::from_millis(100)).await;
+    let directory = tempfile::tempdir().unwrap();
+    let task = FileTask {
+        url: server.url.clone(),
+        dest: directory.path().join("library.jar"),
+        sha1: hex::encode(Sha1::digest(body.as_bytes())),
+        size: body.len() as u64,
+    };
+    let http = http_client().unwrap();
+    let first = Downloader::new(http.clone(), 1, "");
+    let first_task = task.clone();
+    let running = tokio::spawn(async move { first.download_all(vec![first_task], None).await });
+    tokio::time::timeout(Duration::from_secs(5), async {
+        while server.count() == 0 {
+            tokio::task::yield_now().await;
+        }
+    })
+    .await
+    .unwrap();
+    running.abort();
+    assert!(running.await.unwrap_err().is_cancelled());
+    let next = Downloader::new(http, 1, "");
+    let summary = tokio::time::timeout(
+        Duration::from_secs(5),
+        next.download_all(vec![task.clone()], None),
+    )
+    .await
+    .expect("cancelled owner retained the cache lock");
+    assert!(summary.failed.is_empty(), "{:?}", summary.failed);
+    assert_eq!(tokio::fs::read(&task.dest).await.unwrap(), body.as_bytes());
 }
 
 impl Drop for Server {
