@@ -78,7 +78,7 @@ pub fn candidates(our_java_root: Option<&Path>) -> Vec<PathBuf> {
         out.push(java_in(Path::new(&home)));
     }
     if let Some(root) = our_java_root {
-        out.extend(scan_one_level(root, |_| true).map(|dir| java_in(&dir)));
+        out.extend(scan_one_level(root, |_| true).map(|dir| crate::javaget::java_binary(&dir)));
     }
     out.push(PathBuf::from(java_exe_name()));
     out.extend(platform_candidates());
@@ -304,10 +304,10 @@ mod tests {
     fn our_jre_root_is_scanned_before_path_lookup() {
         let dir = tempfile::tempdir().unwrap();
         let jdk = dir.path().join("jdk-21");
-        std::fs::create_dir_all(jdk.join("bin")).unwrap();
-        std::fs::write(jdk.join("bin").join(java_exe_name()), b"#!/bin/sh\n").unwrap();
+        let ours = crate::javaget::java_binary(&jdk);
+        std::fs::create_dir_all(ours.parent().unwrap()).unwrap();
+        std::fs::write(&ours, b"#!/bin/sh\n").unwrap();
         let c = candidates(Some(dir.path()));
-        let ours = java_in(&jdk);
         let plain = PathBuf::from(java_exe_name());
         let ours_idx = c
             .iter()

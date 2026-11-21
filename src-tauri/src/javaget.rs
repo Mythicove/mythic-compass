@@ -102,6 +102,9 @@ pub struct Manifest {
 #[serde(tag = "type", rename_all = "lowercase")]
 pub enum ManifestEntry {
     Directory,
+    Link {
+        target: String,
+    },
     File {
         /// 为真时要给可执行位（Unix 上的 `bin/java`、`bin/javaw` 等）
         #[serde(default)]
@@ -259,6 +262,65 @@ pub fn mark_executable(_dest: &Path, _rel: &[String]) -> Result<(), Error> {
     Ok(())
 }
 
+/// 清单里的链接相对于链接所在目录解析，只允许指向运行时内部。
+fn materialize_links(manifest: &Manifest, dest: &Path) -> Result<(), Error> {
+    use std::path::Component;
+    let root = std::fs::canonicalize(dest)?;
+    for (rel, entry) in &manifest.files {
+        let ManifestEntry::Link { target } = entry else {
+            continue;
+        };
+        let link = safe_join(dest, rel)?;
+        let parent = link.parent().ok_or_else(|| Error::Invalid(rel.clone()))?;
+        let mut resolved = PathBuf::from(rel);
+        resolved.pop();
+        for part in Path::new(target).components() {
+            match part {
+                Component::Normal(name) => resolved.push(name),
+                Component::CurDir => {}
+                Component::ParentDir if resolved.pop() => {}
+                _ => {
+                    return Err(Error::Invalid(format!(
+                        "java runtime link escapes its root: {rel} -> {target}"
+                    )));
+                }
+            }
+        }
+        let destination = dest.join(resolved);
+        if !std::fs::canonicalize(parent)?.starts_with(&root)
+            || !std::fs::canonicalize(&destination)?.starts_with(&root)
+        {
+            return Err(Error::Invalid(format!(
+                "java runtime link escapes its root: {rel} -> {target}"
+            )));
+        }
+        match std::fs::symlink_metadata(&link) {
+            Ok(meta) if meta.file_type().is_symlink() => {
+                if std::fs::read_link(&link)? == Path::new(target) {
+                    continue;
+                }
+                std::fs::remove_file(&link)?;
+            }
+            Ok(_) => {
+                return Err(Error::Invalid(format!(
+                    "java runtime link conflicts with existing content: {rel}"
+                )));
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+            Err(e) => return Err(e.into()),
+        }
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(target, &link)?;
+        #[cfg(windows)]
+        if destination.is_dir() {
+            std::os::windows::fs::symlink_dir(target, &link)?;
+        } else {
+            std::os::windows::fs::symlink_file(target, &link)?;
+        }
+    }
+    Ok(())
+}
+
 /// 清单本身的 sha1（索引里给了）。用 `get_text` 拿到的字符串再算，
 /// 而不是拿原始字节：清单是 JSON 文本，两种读法结果一致，而这一处不值得为它开一条二进制路径。
 fn sha1_hex(bytes: &[u8]) -> String {
@@ -270,7 +332,12 @@ fn sha1_hex(bytes: &[u8]) -> String {
 
 /// `bin/java` 的落点（Windows 上是 `bin\java.exe`）。
 pub fn java_binary(dest: &Path) -> PathBuf {
-    dest.join("bin")
+    let home = if cfg!(target_os = "macos") {
+        dest.join("jre.bundle/Contents/Home")
+    } else {
+        dest.to_path_buf()
+    };
+    home.join("bin")
         .join(if cfg!(windows) { "java.exe" } else { "java" })
 }
 
@@ -352,6 +419,11 @@ pub async fn install(
         .map_err(|e| Error::Config(format!("decode java runtime manifest: {e}")))?;
 
     let (tasks, executables) = plan(&manifest, &dest)?;
+    for (rel, entry) in &manifest.files {
+        if matches!(entry, ManifestEntry::Directory) {
+            std::fs::create_dir_all(safe_join(&dest, rel)?)?;
+        }
+    }
     let summary = dl.download_all(tasks, progress).await;
     if !summary.failed.is_empty() {
         return Err(Error::Config(format!(
@@ -361,6 +433,7 @@ pub async fn install(
         )));
     }
     mark_executable(&dest, &executables)?;
+    materialize_links(&manifest, &dest)?;
 
     let bin = java_binary(&dest);
     if !bin.is_file() {
@@ -383,6 +456,56 @@ pub async fn install(
 mod tests {
     use super::*;
     use crate::version::{Arch, OsInfo, OsName};
+
+    #[test]
+    fn runtime_links_reject_escape_and_existing_content() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("LICENSE"), b"license").unwrap();
+        for target in ["../LICENSE", "/LICENSE", "../../LICENSE"] {
+            let manifest: Manifest = serde_json::from_value(serde_json::json!({
+                "files": {"alias": {"type": "link", "target": target}}
+            }))
+            .unwrap();
+            assert!(materialize_links(&manifest, dir.path()).is_err());
+            assert!(!dir.path().join("alias").exists());
+        }
+        std::fs::write(dir.path().join("alias"), b"user content").unwrap();
+        let manifest: Manifest = serde_json::from_value(serde_json::json!({
+            "files": {"alias": {"type": "link", "target": "LICENSE"}}
+        }))
+        .unwrap();
+        assert!(materialize_links(&manifest, dir.path()).is_err());
+        assert_eq!(
+            std::fs::read(dir.path().join("alias")).unwrap(),
+            b"user content"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn runtime_links_preserve_relative_targets_and_repair_missing_links() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("legal/java.base")).unwrap();
+        std::fs::create_dir_all(dir.path().join("legal/java.compiler")).unwrap();
+        std::fs::write(dir.path().join("legal/java.base/LICENSE"), b"license").unwrap();
+        let manifest: Manifest = serde_json::from_value(serde_json::json!({
+            "files": {"legal/java.compiler/LICENSE": {
+                "type": "link", "target": "../java.base/LICENSE"
+            }}
+        }))
+        .unwrap();
+        let link = dir.path().join("legal/java.compiler/LICENSE");
+        materialize_links(&manifest, dir.path()).unwrap();
+        materialize_links(&manifest, dir.path()).unwrap();
+        assert_eq!(std::fs::read(&link).unwrap(), b"license");
+        assert_eq!(
+            std::fs::read_link(&link).unwrap(),
+            Path::new("../java.base/LICENSE")
+        );
+        std::fs::remove_file(&link).unwrap();
+        materialize_links(&manifest, dir.path()).unwrap();
+        assert_eq!(std::fs::read(link).unwrap(), b"license");
+    }
 
     fn fixture(name: &str) -> String {
         let p = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/").to_string() + name;
@@ -645,13 +768,9 @@ mod tests {
         let paths = Paths::new(dir.path().join("data"));
         paths.ensure().unwrap();
         std::fs::create_dir_all(paths.java().join("half-done/bin")).unwrap();
-        std::fs::create_dir_all(paths.java().join("java-runtime-delta/bin")).unwrap();
-        let bin = if cfg!(windows) {
-            "bin/java.exe"
-        } else {
-            "bin/java"
-        };
-        std::fs::write(paths.java().join("java-runtime-delta").join(bin), b"").unwrap();
+        let bin = java_binary(&paths.java().join("java-runtime-delta"));
+        std::fs::create_dir_all(bin.parent().unwrap()).unwrap();
+        std::fs::write(bin, b"").unwrap();
 
         assert_eq!(installed(&paths), vec!["java-runtime-delta".to_string()]);
         assert_eq!(

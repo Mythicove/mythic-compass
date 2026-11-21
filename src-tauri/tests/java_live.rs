@@ -91,7 +91,8 @@ async fn check_runtime(component: &str, major: u32) {
     assert_eq!(again.path, got.path);
 
     // 中断安装可能留下 bin/java 却缺少其余文件：重装必须修复，而不是提前报成功。
-    let release = bin.parent().unwrap().parent().unwrap().join("release");
+    let release =
+        std::fs::canonicalize(bin.parent().unwrap().parent().unwrap().join("release")).unwrap();
     std::fs::remove_file(&release).unwrap();
     let repaired = javaget::install(&api, &dl, &paths, &os, component, None)
         .await
