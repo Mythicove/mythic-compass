@@ -110,6 +110,21 @@ jobs:
         with:
           workspaces: src-tauri
 
+      - name: download, execute and repair official Java 21
+        working-directory: src-tauri
+        # 实际执行下载目录里的 Java；此时尚未通过 setup-java 配置 processor 的 JDK。
+        # 独立临时数据目录保证运行时缓存为空，不依赖 runner 的预装 Java。
+        env:
+          COMPASS_JAVA_DIR: ${{ runner.temp }}/compass-java-live
+        run: cargo test --test java_live -- --ignored --nocapture downloads_modern_java_and_repairs_its_installation
+
+      - name: retain official Java acceptance
+        uses: actions/upload-artifact@v4
+        with:
+          name: java-acceptance-${{ matrix.platform }}
+          path: ${{ runner.temp }}/compass-java-live/java-runtime-delta-acceptance.json
+          if-no-files-found: error
+
       # NeoForge 的 processor pipeline 要用 Java 跑（installertools / jarsplitter /
       # AutoRenamingTool / binarypatcher），1.21.4 这一代要 Java 21。
       # 固定装上，不依赖 runner 预装的是哪个版本。

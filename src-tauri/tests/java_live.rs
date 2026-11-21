@@ -1,12 +1,10 @@
 //! 真下载一份 Mojang 官方 JRE，并用 `java -version` 证明它跑得起来。
 //!
-//! 这条测试验的是 P5-W14 的验收条件："干净机器上不装 Java 也能启动"。
+//! 覆盖官方运行时安装入口；完整自动选择 Java 与游戏启动另行验收。
 //! 纯离线的形状测试证明不了这件事——manifest 解析对了、下载计划对了，
 //! 仍然可能因为漏了可执行位、路径拼错、或者 sha1 校验把正确的文件判成坏的而装不出一个能用的 JRE。
 //!
-//! 选 `jre-legacy`（Java 8）而不是 `java-runtime-delta`（Java 21）：前者小得多，
-//! 而这条测试要验的是"下载→落盘→可执行"这条链路，与具体是哪个大版本无关。
-//! 断言 `java -version` 报出 8，顺带把"我们下的确实是我们要的那个版本"也钉住了。
+//! Java 8 保留本地旧版本验收；Java 21 在三平台 CI 上验证现代整合包运行时。
 
 mod live;
 
@@ -15,8 +13,18 @@ use compass_lib::paths::Paths;
 use compass_lib::version::OsInfo;
 
 #[tokio::test]
-#[ignore = "needs network and downloads a full JRE (~40MB for jre-legacy)"]
+#[ignore = "needs network and downloads the official Java 8 runtime"]
 async fn downloads_a_real_jre_and_it_actually_runs() {
+    check_runtime("jre-legacy", 8).await;
+}
+
+#[tokio::test]
+#[ignore = "needs network and downloads the official Java 21 runtime"]
+async fn downloads_modern_java_and_repairs_its_installation() {
+    check_runtime("java-runtime-delta", 21).await;
+}
+
+async fn check_runtime(component: &str, major: u32) {
     let data = live::data_dir("COMPASS_JAVA_DIR");
     let paths = Paths::new(data.path().to_path_buf());
     paths.ensure().unwrap();
@@ -26,7 +34,6 @@ async fn downloads_a_real_jre_and_it_actually_runs() {
     let os = OsInfo::current();
 
     // 这个平台得真有官方运行时，否则测的是"报错对不对"而不是"下载行不行"
-    let component = "jre-legacy";
     assert!(
         javaget::platform_runtime(
             &serde_json::from_str(
@@ -53,7 +60,6 @@ async fn downloads_a_real_jre_and_it_actually_runs() {
         got.download.downloaded + got.download.skipped,
         (got.download.bytes / 1024 / 1024)
     );
-    assert_eq!(got.version_name.split('u').next().unwrap_or(""), "8");
 
     let bin = std::path::PathBuf::from(&got.path);
     assert!(bin.is_file(), "{} 不在", got.path);
@@ -67,9 +73,13 @@ async fn downloads_a_real_jre_and_it_actually_runs() {
         .await
         .expect("下载下来的 JRE 应当能被探测到版本");
     assert_eq!(
-        probed.version, 8,
-        "下到的是 Java {}，不是 8",
+        probed.version, major,
+        "下到的是 Java {}，不是 {major}",
         probed.version
+    );
+    assert!(
+        probed.is_64bit,
+        "official runtime must match the 64-bit platform"
     );
     println!("probed: {:?}", probed);
 
@@ -91,7 +101,25 @@ async fn downloads_a_real_jre_and_it_actually_runs() {
         "runtime with an existing Java binary was not repaired"
     );
     assert!(repaired.download.downloaded > 0);
+    let repaired_runtime = compass_lib::java::probe(&bin).await.unwrap();
+    assert_eq!(repaired_runtime.version, major);
+    assert!(repaired_runtime.is_64bit);
 
     // 已装组件要能被列出来（Java 管理页就是读这个）
     assert_eq!(javaget::installed(&paths), vec![component.to_string()]);
+
+    let acceptance = serde_json::json!({
+        "component": component,
+        "java_major": repaired_runtime.version,
+        "is_64bit": repaired_runtime.is_64bit,
+        "files": got.download.downloaded + got.download.skipped,
+        "reinstall_downloaded": again.download.downloaded,
+        "missing_release_repaired": release.is_file(),
+        "scope": "official runtime download, executable probe, cache reuse and missing-file repair"
+    });
+    std::fs::write(
+        paths.root().join(format!("{component}-acceptance.json")),
+        serde_json::to_vec_pretty(&acceptance).unwrap(),
+    )
+    .unwrap();
 }
