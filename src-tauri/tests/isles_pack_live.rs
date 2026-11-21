@@ -1,6 +1,7 @@
 //! Cross-product acceptance: consume the exact .mrpack published by a real Isles
 //! process. Run with Isles scripts/compass-pack-live.mjs; requires network,
-//! a desktop/OpenGL session. Downloads the game's official Java runtime.
+//! a desktop/OpenGL session and a real isolated Mirror process.
+//! Downloads the game's official Java runtime.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
@@ -17,7 +18,10 @@ async fn published_pack_installs_and_initializes_a_real_client() {
     let pack =
         PathBuf::from(std::env::var_os("COMPASS_ISLES_PACK").expect("published .mrpack path"));
     let run = PathBuf::from(std::env::var_os("COMPASS_ISLES_RUN").expect("isolated run directory"));
-    let origin = std::env::var("COMPASS_ISLES_ORIGIN").expect("external identity boundary origin");
+    let origin = std::env::var("COMPASS_ISLES_ORIGIN").expect("pack source boundary origin");
+    let mirror_origin = std::env::var("COMPASS_MIRROR_ORIGIN").expect("real Mirror origin");
+    let player = std::env::var("COMPASS_MIRROR_PLAYER").expect("registered player");
+    let password = std::env::var("COMPASS_MIRROR_PASSWORD").expect("launcher credential");
     let paths = Paths::new(run.join("compass-data"));
     paths.ensure().unwrap();
     let http = api::http_client().unwrap();
@@ -106,13 +110,33 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         "Isles live"
     );
 
-    // Launch the stored instance through the same preparation used by commands.
-    // The account is a loopback protocol fixture, not an authenticated player.
-    let account = serde_json::from_value(serde_json::json!({
-        "playerName":"IslesTester", "playerUuid":"7c0f77ad48953c9aa5be05ce3d65be75",
-        "accessToken":"00000000000000000000000000000000", "apiUrl":origin
-    }))
-    .unwrap();
+    // Real launcher authentication through the same transport used by commands.
+    let authenticated = api
+        .authenticate(&mirror_origin, &player, &password)
+        .await
+        .unwrap();
+    assert_eq!(authenticated.available_profiles.len(), 1);
+    let profile = authenticated.selected_profile.unwrap();
+    assert_eq!(profile.name, player);
+    let now = compass_lib::account::now_unix();
+    let account = compass_lib::account::Account {
+        player_name: profile.name,
+        player_uuid: profile.id,
+        access_token: authenticated.access_token,
+        client_token: authenticated.client_token,
+        api_url: mirror_origin.clone(),
+        signed_in_at: now,
+        token_obtained_at: now,
+        kind: compass_lib::account::AccountKind::Yggdrasil,
+    };
+    compass_lib::account::save(&paths, &account).unwrap();
+    let (stored, warning) = compass_lib::account::load(&paths);
+    assert!(warning.is_none(), "account load warning: {warning:?}");
+    let stored = stored.unwrap();
+    assert_eq!(stored.access_token, account.access_token);
+    api.validate(&mirror_origin, &stored.access_token, &stored.client_token)
+        .await
+        .unwrap();
     let mut inst = instance::load(&paths, "isles-pack").unwrap();
     inst.memory_mb = Some(2048);
     inst.resolution = Some(instance::Resolution {
@@ -139,7 +163,7 @@ async fn published_pack_installs_and_initializes_a_real_client() {
     inst.java_path = Some(java.clone());
     instance::save(&paths, &inst).unwrap();
     let cfg = config::Config {
-        api_url: origin,
+        api_url: mirror_origin.clone(),
         ..config::Config::default()
     };
     let prepared = runner::prepare_launch(&paths, &http, &cfg, &inst, &account, None)
@@ -147,6 +171,10 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         .unwrap();
     assert_eq!(prepared.java_version, 21);
     assert_eq!(prepared.plan.program, java);
+    assert!(
+        prepared.injected,
+        "authlib-injector missing from the launch plan"
+    );
     println!("Starting actual Minecraft client: {}", inst.version_id);
     let mut child = launch::spawn(&prepared.plan).await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -171,7 +199,10 @@ async fn published_pack_installs_and_initializes_a_real_client() {
     while Instant::now() < deadline {
         if let Ok(Some(line)) = tokio::time::timeout(Duration::from_millis(200), rx.recv()).await {
             initialized |= line.contains("minecraft:textures/atlas/blocks.png-atlas");
-            lines.push(line);
+            lines.push(
+                line.replace(&account.access_token, "[redacted]")
+                    .replace(&account.client_token, "[redacted]"),
+            );
             if initialized {
                 break;
             }
@@ -185,7 +216,10 @@ async fn published_pack_installs_and_initializes_a_real_client() {
     stdout_task.await.unwrap();
     stderr_task.await.unwrap();
     while let Ok(line) = rx.try_recv() {
-        lines.push(line);
+        lines.push(
+            line.replace(&account.access_token, "[redacted]")
+                .replace(&account.client_token, "[redacted]"),
+        );
     }
     std::fs::write(run.join("minecraft-client.log"), lines.join("\n")).unwrap();
     assert!(
@@ -199,10 +233,22 @@ async fn published_pack_installs_and_initializes_a_real_client() {
             .any(|line| line.contains("fabric-api 0.116.18+1.21.1")),
         "real Fabric API not loaded"
     );
+    assert!(
+        lines.iter().any(|line| line.contains("authlib-injector")),
+        "client did not report authlib-injector"
+    );
+    api.invalidate(&mirror_origin, &account.access_token, &account.client_token)
+        .await
+        .unwrap();
+    assert!(
+        api.validate(&mirror_origin, &account.access_token, &account.client_token)
+            .await
+            .is_err()
+    );
     // Change only the external download boundary after publication. Same size,
     // wrong bytes: an installer accepting size alone must fail this scenario.
     assert!(
-        http.post(format!("{}/fixture/corrupt-optional", cfg.api_url))
+        http.post(format!("{origin}/fixture/corrupt-optional"))
             .send()
             .await
             .unwrap()
@@ -245,7 +291,9 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         "fileSha1AndSizeVerified":true, "duplicateImport":"refused",
         "corruptDownload":"reported-and-not-promoted",
         "client":"block-atlas-initialized", "fabricApi":"loaded",
-        "authentication":"loopback-fixture-not-online-account-validation",
+        "authentication":"real-mirror-player-credential",
+        "accountPersistence":"token-reloaded-and-validated",
+        "logout":"token-invalidated", "authlibInjector":"injected-and-reported-by-client",
         "javaSource":"compass-downloaded-official-runtime",
         "javaComponent":runtime.component, "javaMajor":prepared.java_version,
         "scope":"native-import-and-launch-core-not-desktop-click-or-game-server-join"
