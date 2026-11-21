@@ -22,6 +22,12 @@ async fn published_pack_installs_and_initializes_a_real_client() {
     let mirror_origin = std::env::var("COMPASS_MIRROR_ORIGIN").expect("real Mirror origin");
     let player = std::env::var("COMPASS_MIRROR_PLAYER").expect("registered player");
     let password = std::env::var("COMPASS_MIRROR_PASSWORD").expect("launcher credential");
+    let game_port = std::env::var("COMPASS_GAME_PORT")
+        .unwrap()
+        .parse::<u16>()
+        .unwrap();
+    let skin_digest =
+        std::env::var("COMPASS_SKIN_SHA256").expect("uploaded normalized skin digest");
     let paths = Paths::new(run.join("compass-data"));
     paths.ensure().unwrap();
     let http = api::http_client().unwrap();
@@ -161,6 +167,19 @@ async fn published_pack_installs_and_initializes_a_real_client() {
     assert_eq!(probed.version, required_java.major_version);
     assert!(probed.is_64bit);
     inst.java_path = Some(java.clone());
+    // This native-core scenario starts with Minecraft's first-run prompts accepted.
+    // The desktop onboarding clicks are a separate UI scenario.
+    std::fs::write(
+        instance::game_dir(&paths, "isles-pack")
+            .unwrap()
+            .join("options.txt"),
+        "onboardAccessibility:false\nskipMultiplayerWarning:true\n",
+    )
+    .unwrap();
+    inst.server = Some(launch::ServerJoin {
+        host: "127.0.0.1".into(),
+        port: Some(game_port),
+    });
     instance::save(&paths, &inst).unwrap();
     let cfg = config::Config {
         api_url: mirror_origin.clone(),
@@ -175,6 +194,39 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         prepared.injected,
         "authlib-injector missing from the launch plan"
     );
+    // Run a real online-mode server with the same pinned injector and downloaded Java.
+    let server_work = run.join("game-server");
+    let server_log = std::fs::File::create(run.join("minecraft-server.log")).unwrap();
+    let mut server = tokio::process::Command::new(&java)
+        .args(["-Xms256M", "-Xmx1536M", "-Dauthlibinjector.side=server"])
+        .arg(compass_lib::authlibinjector::agent_arg(
+            &compass_lib::authlibinjector::jar_path(&paths),
+            &mirror_origin,
+        ))
+        .args(["-jar", "server.jar", "--nogui"])
+        .current_dir(&server_work)
+        .stdout(server_log.try_clone().unwrap())
+        .stderr(server_log)
+        .stdin(std::process::Stdio::piped())
+        .kill_on_drop(true)
+        .spawn()
+        .unwrap();
+    let server_deadline = Instant::now() + Duration::from_secs(240);
+    while !server_work.join("server-ready.json").is_file() {
+        assert!(
+            server.try_wait().unwrap().is_none(),
+            "server exited; see minecraft-server.log"
+        );
+        assert!(
+            Instant::now() < server_deadline,
+            "server startup timed out; see minecraft-server.log"
+        );
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    let ready: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(server_work.join("server-ready.json")).unwrap())
+            .unwrap();
+    assert_eq!(ready["onlineMode"], true);
     println!("Starting actual Minecraft client: {}", inst.version_id);
     let mut child = launch::spawn(&prepared.plan).await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -203,7 +255,7 @@ async fn published_pack_installs_and_initializes_a_real_client() {
                 line.replace(&account.access_token, "[redacted]")
                     .replace(&account.client_token, "[redacted]"),
             );
-            if initialized {
+            if initialized && server_work.join("server-player.json").is_file() {
                 break;
             }
         }
@@ -237,6 +289,52 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         lines.iter().any(|line| line.contains("authlib-injector")),
         "client did not report authlib-injector"
     );
+    let observed: serde_json::Value = serde_json::from_slice(
+        &std::fs::read(server_work.join("server-player.json"))
+            .expect("client did not join; see client/server logs"),
+    )
+    .unwrap();
+    assert_eq!(observed["onlineMode"], true);
+    assert_eq!(observed["name"], player);
+    assert_eq!(
+        observed["uuid"].as_str().unwrap().replace('-', ""),
+        account.player_uuid.replace('-', "")
+    );
+    assert_eq!(observed["skinModel"], "SLIM");
+    assert_eq!(observed["skinSigned"], true);
+    let skin_url = observed["skinUrl"].as_str().unwrap();
+    assert!(skin_url.starts_with(&format!("{mirror_origin}/textures/")));
+    let skin = http
+        .get(skin_url)
+        .send()
+        .await
+        .unwrap()
+        .error_for_status()
+        .unwrap()
+        .bytes()
+        .await
+        .unwrap();
+    let downloaded_skin = run.join("server-observed-skin.png");
+    std::fs::write(&downloaded_skin, &skin).unwrap();
+    assert_eq!(
+        net::sha256_of_file(&downloaded_skin).await.unwrap(),
+        skin_digest
+    );
+    use tokio::io::AsyncWriteExt;
+    server
+        .stdin
+        .take()
+        .unwrap()
+        .write_all(b"stop\n")
+        .await
+        .unwrap();
+    if tokio::time::timeout(Duration::from_secs(30), server.wait())
+        .await
+        .is_err()
+    {
+        server.kill().await.unwrap();
+        server.wait().await.unwrap();
+    }
     api.invalidate(&mirror_origin, &account.access_token, &account.client_token)
         .await
         .unwrap();
@@ -296,7 +394,9 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         "logout":"token-invalidated", "authlibInjector":"injected-and-reported-by-client",
         "javaSource":"compass-downloaded-official-runtime",
         "javaComponent":runtime.component, "javaMajor":prepared.java_version,
-        "scope":"native-import-and-launch-core-not-desktop-click-or-game-server-join"
+        "serverJoin":"online-mode-authenticated", "serverUuid":"matches-mirror-profile",
+        "serverSkin":"uploaded-slim-signed-texture-and-bytes-match",
+        "scope":"native-import-launch-and-online-server-join-not-desktop-click"
     });
     std::fs::write(
         run.join("compass-result.json"),
