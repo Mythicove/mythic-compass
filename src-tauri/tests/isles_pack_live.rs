@@ -1,16 +1,18 @@
 //! Cross-product acceptance: consume the exact .mrpack published by a real Isles
 //! process. Run with Isles scripts/compass-pack-live.mjs; requires network,
-//! Java 21 and a desktop/OpenGL session. No replacement installer or fake JVM.
+//! a desktop/OpenGL session. Downloads the game's official Java runtime.
 
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use compass_lib::{api, config, instance, launch, meta, modpack, net, paths::Paths, runner};
+use compass_lib::{
+    api, config, instance, javaget, launch, meta, modpack, net, paths::Paths, runner,
+};
 use sha1::{Digest, Sha1};
 use tokio::io::{AsyncBufReadExt, BufReader};
 
 #[tokio::test]
-#[ignore = "run with real Isles publication, network, Java 21 and desktop/OpenGL"]
+#[ignore = "run with real Isles publication, network and desktop/OpenGL"]
 async fn published_pack_installs_and_initializes_a_real_client() {
     let pack =
         PathBuf::from(std::env::var_os("COMPASS_ISLES_PACK").expect("published .mrpack path"));
@@ -117,13 +119,24 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         width: 854,
         height: 480,
     });
-    if let Some(home) = std::env::var_os("JAVA_HOME") {
-        inst.java_path = Some(PathBuf::from(home).join("bin").join(if cfg!(windows) {
-            "java.exe"
-        } else {
-            "java"
-        }));
-    }
+    let version = runner::read_installed_version(&paths, &inst.version_id).unwrap();
+    let required_java = version.java_version.as_ref().unwrap();
+    let runtime = javaget::install(
+        &api,
+        &net::Downloader::new(http.clone(), 16, String::new(), &paths),
+        &paths,
+        &compass_lib::version::OsInfo::current(),
+        &required_java.component,
+        None,
+    )
+    .await
+    .unwrap();
+    let java = PathBuf::from(&runtime.path);
+    assert!(java.starts_with(paths.java()));
+    let probed = compass_lib::java::probe(&java).await.unwrap();
+    assert_eq!(probed.version, required_java.major_version);
+    assert!(probed.is_64bit);
+    inst.java_path = Some(java.clone());
     instance::save(&paths, &inst).unwrap();
     let cfg = config::Config {
         api_url: origin,
@@ -133,6 +146,7 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         .await
         .unwrap();
     assert_eq!(prepared.java_version, 21);
+    assert_eq!(prepared.plan.program, java);
     println!("Starting actual Minecraft client: {}", inst.version_id);
     let mut child = launch::spawn(&prepared.plan).await.unwrap();
     let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
@@ -232,6 +246,8 @@ async fn published_pack_installs_and_initializes_a_real_client() {
         "corruptDownload":"reported-and-not-promoted",
         "client":"block-atlas-initialized", "fabricApi":"loaded",
         "authentication":"loopback-fixture-not-online-account-validation",
+        "javaSource":"compass-downloaded-official-runtime",
+        "javaComponent":runtime.component, "javaMajor":prepared.java_version,
         "scope":"native-import-and-launch-core-not-desktop-click-or-game-server-join"
     });
     std::fs::write(
