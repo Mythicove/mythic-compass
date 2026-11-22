@@ -16,12 +16,14 @@ use crate::error::Error;
 /// 复制/导出实例时跳过的目录：都是每次启动重建、或纯噪音、或含隐私的东西。
 /// - `natives` 每次启动前清空重建（见 `instance::natives_dir`）
 /// - `logs` / `crash-reports` 可能含账号名与机器路径，且能长到几百 MB
-/// - `quickPlay` 是 Quick Play 的日志目录
-pub const SKIP_DIRS: [&str; 4] = ["natives", "logs", "crash-reports", "quickPlay"];
+pub const SKIP_DIRS: [&str; 3] = ["natives", "logs", "crash-reports"];
 
-/// 跳过的文件：JVM 崩溃转储、编辑器临时文件、macOS 元数据。
+/// 跳过的文件：JVM 崩溃转储、Quick Play 日志、编辑器临时文件、macOS 元数据。
 pub fn skip_file(name: &str) -> bool {
-    name.starts_with("hs_err_pid") || name.ends_with(".tmp") || name == ".DS_Store"
+    name.starts_with("hs_err_pid")
+        || name == "quickPlay"
+        || name.ends_with(".tmp")
+        || name == ".DS_Store"
 }
 
 /// 导出结果（UI 报"导出了多少个文件、多大"）。
@@ -321,6 +323,12 @@ mod tests {
         std::fs::create_dir_all(src.join(".minecraft/logs")).unwrap();
         std::fs::write(src.join(".minecraft/logs/latest.log"), b"noise").unwrap();
         std::fs::write(src.join(".minecraft/hs_err_pid1.log"), b"noise").unwrap();
+        // 客户端实际写的是文件，导出仍须排除这份逐次启动日志。
+        std::fs::write(
+            src.join(".minecraft/quickPlay"),
+            br#"{"type":"MULTIPLAYER"}"#,
+        )
+        .unwrap();
 
         let zip_path = d.path().join("out/inst.zip");
         let summary = zip_dir(&src, &zip_path, &[]).unwrap();
@@ -341,6 +349,7 @@ mod tests {
             b"world"
         );
         assert!(!dst.join("natives").exists());
+        assert!(!dst.join(".minecraft/quickPlay").exists());
         assert!(!dst.join(".minecraft/logs").exists());
     }
 

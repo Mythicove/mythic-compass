@@ -131,12 +131,6 @@ pub fn build(input: &LaunchInput) -> Result<LaunchPlan, Error> {
     // （必须在主类之前），用户参数不该插到它前面去。
     extra_jvm_args.extend(input.instance.extra_jvm_args.iter().cloned());
 
-    // Quick Play（1.20+）把它的日志写在游戏目录的 quickPlay/ 下，参数值由 launch 从
-    // game_dir 派生；目录在这里建好——本模块是碰文件系统的那一层，build_plan 是纯函数。
-    if launch::supports_quick_play(input.version) {
-        std::fs::create_dir_all(game_dir.join("quickPlay"))?;
-    }
-
     let opts = LaunchOptions {
         game_dir,
         natives_dir,

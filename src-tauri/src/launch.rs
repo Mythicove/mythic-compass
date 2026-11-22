@@ -175,7 +175,8 @@ fn substitutions(v: &VersionJson, os: &OsInfo, opts: &LaunchOptions) -> HashMap<
     put("clientid", String::new());
     put("auth_xuid", "0".to_string());
     put("ignoreList", String::new());
-    // Quick Play 的日志目录，固定在游戏目录下（1.20+ 的模板会引用它）。
+    // Quick Play 的日志文件，固定在游戏目录下（1.20+ 的模板会引用它）。
+    // 客户端负责写入，启动前不能把这个文件路径创建成目录。
     // 老版本不引用，多一个变量没有副作用。
     put(
         "quickPlayPath",
@@ -841,7 +842,7 @@ mod tests {
             .args
             .iter()
             .position(|a| a == "--quickPlayPath")
-            .expect("Quick Play 需要日志目录");
+            .expect("Quick Play 需要日志文件路径");
         assert!(
             modern.args[path + 1].ends_with("quickPlay"),
             "{}",
