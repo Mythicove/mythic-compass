@@ -1,4 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { NativeSelect } from "../components/ui/native-select";
+import { Checkbox } from "../components/ui/checkbox";
+import { Textarea } from "../components/ui/textarea";
 import { listen } from "@tauri-apps/api/event";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { errorKey, useI18n } from "../i18n";
@@ -460,15 +465,15 @@ export function InstancesView({
         <div className="row between">
           <h2>{t("nav.instances")}</h2>
           <div className="row">
-            <button type="button" className="link" onClick={() => void pickModpack()}>
+            <Button type="button" className="link" onClick={() => void pickModpack()}>
               {busy === "modpack:pick" ? "…" : t("instances.modpack")}
-            </button>
-            <button type="button" className="link" onClick={() => void pickImport()}>
+            </Button>
+            <Button type="button" className="link" onClick={() => void pickImport()}>
               {busy === "import:pick" ? "…" : t("instances.import")}
-            </button>
-            <button type="button" onClick={() => setCreating((v) => !v)}>
+            </Button>
+            <Button type="button" onClick={() => setCreating((v) => !v)}>
               {creating ? t("common.cancel") : t("instances.new")}
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -499,7 +504,7 @@ export function InstancesView({
           <div className="stack">
             <label className="field">
               <span>{t("instances.name")}</span>
-              <input
+              <Input
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
                 placeholder="1.21.4 Fabric"
@@ -507,37 +512,36 @@ export function InstancesView({
             </label>
             <label className="field">
               <span>{t("instances.version")}</span>
-              <input
+              <Input
                 value={filter}
                 onChange={(e) => setFilter(e.target.value)}
                 placeholder={t("instances.filterVersions")}
               />
             </label>
-            <select
-              size={8}
+            <NativeSelect
               value={newVersion}
               onChange={(e) => setNewVersion(e.target.value)}
               aria-label={t("instances.version")}
             >
+              <option value="" disabled>{t("instances.version")}</option>
               {shownVersions.map((v) => (
                 <option key={v.id} value={v.id}>
                   {v.id}
                   {v.type === "release" ? "" : ` (${v.type})`}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
             <label className="check">
-              <input
-                type="checkbox"
+              <Checkbox
                 checked={snapshots}
-                onChange={(e) => setSnapshots(e.target.checked)}
+                onCheckedChange={setSnapshots}
               />
               <span>{t("instances.includeSnapshots")}</span>
             </label>
             <div className="row">
-              <button type="button" disabled={busy !== null || !newVersion} onClick={() => void create()}>
+              <Button type="button" disabled={busy !== null || !newVersion} onClick={() => void create()}>
                 {t("instances.create")}
-              </button>
+              </Button>
               {newName && <span className="muted small">→ {toSlug(newName)}</span>}
             </div>
           </div>
@@ -584,16 +588,16 @@ export function InstancesView({
           <div className="row sub">
             <label className="field inline grow">
               <span>{t("instances.name")}</span>
-              <input value={importName} onChange={(e) => setImportName(e.target.value)} />
+              <Input value={importName} onChange={(e) => setImportName(e.target.value)} />
             </label>
-            <button
+            <Button
               type="button"
               disabled={busy !== null || !importName.trim()}
               onClick={() => void doImport()}
             >
               {busy === "import:run" ? "…" : t("instances.importConfirm")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               className="link"
               onClick={() => {
@@ -602,7 +606,7 @@ export function InstancesView({
               }}
             >
               {t("common.cancel")}
-            </button>
+            </Button>
             <span className="muted small">
               → {uniqueSlug(toSlug(importName.trim() || importInfo.info.name))}
             </span>
@@ -660,16 +664,16 @@ export function InstancesView({
           <div className="row sub">
             <label className="field inline grow">
               <span>{t("instances.name")}</span>
-              <input value={packName} onChange={(e) => setPackName(e.target.value)} />
+              <Input value={packName} onChange={(e) => setPackName(e.target.value)} />
             </label>
-            <button
+            <Button
               type="button"
               disabled={busy !== null || !packName.trim() || packInfo.info.minecraft === null}
               onClick={() => void doModpackInstall()}
             >
               {busy === "modpack:run" ? "…" : t("instances.modpackConfirm")}
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
               className="link"
               onClick={() => {
@@ -678,7 +682,7 @@ export function InstancesView({
               }}
             >
               {t("common.cancel")}
-            </button>
+            </Button>
             <span className="muted small">
               → {uniqueSlug(toSlug(packName.trim() || packInfo.info.name))}
             </span>
@@ -715,48 +719,48 @@ export function InstancesView({
               </div>
               <div className="row">
                 {!ready && (
-                  <button
+                  <Button
                     type="button"
                     disabled={busy !== null}
                     onClick={() => void install(inst)}
                   >
                     {busy === `${inst.slug}:install` ? "…" : t("instances.install")}
-                  </button>
+                  </Button>
                 )}
                 {isRunning ? (
-                  <button type="button" onClick={() => void ipc.instanceStop()}>
+                  <Button type="button" onClick={() => void ipc.instanceStop()}>
                     {t("instances.stop")}
-                  </button>
+                  </Button>
                 ) : (
-                  <button
+                  <Button
                     type="button"
                     disabled={busy !== null || !ready || !runtime}
                     title={ready ? undefined : t("instances.installFirst")}
                     onClick={() => void launch(inst)}
                   >
                     {busy === `${inst.slug}:launch` ? "…" : t("instances.launch")}
-                  </button>
+                  </Button>
                 )}
-                <button type="button" className="link" onClick={() => onOpenContent(inst.slug)}>
+                <Button type="button" className="link" onClick={() => onOpenContent(inst.slug)}>
                   {t("instances.content")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className="link"
                   disabled={busy !== null}
                   onClick={() => openSettings(inst)}
                 >
                   {t("instances.settings")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className="link"
                   disabled={busy !== null || isRunning}
                   onClick={() => setLoaderOf(loaderOf === inst.slug ? null : inst.slug)}
                 >
                   {t("instances.loader")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className="link"
                   disabled={busy !== null || isRunning}
@@ -766,23 +770,23 @@ export function InstancesView({
                   }}
                 >
                   {t("instances.duplicate")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className="link"
                   disabled={busy !== null || isRunning}
                   onClick={() => setExportOf(exporting ? null : inst.slug)}
                 >
                   {t("instances.export")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className="link"
                   disabled={busy !== null || isRunning}
                   onClick={() => void removeInstance(inst)}
                 >
                   {t("instances.delete")}
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -790,22 +794,22 @@ export function InstancesView({
               <div className="row sub">
                 <label className="field inline">
                   <span>{t("instances.duplicateName")}</span>
-                  <input
+                  <Input
                     value={dupName}
                     onChange={(e) => setDupName(e.target.value)}
                     placeholder={`${inst.name} copy`}
                   />
                 </label>
-                <button
+                <Button
                   type="button"
                   disabled={busy !== null}
                   onClick={() => void duplicate(inst)}
                 >
                   {busy === `${inst.slug}:duplicate` ? "…" : t("instances.duplicate")}
-                </button>
-                <button type="button" className="link" onClick={() => setDupOf(null)}>
+                </Button>
+                <Button type="button" className="link" onClick={() => setDupOf(null)}>
                   {t("common.cancel")}
-                </button>
+                </Button>
                 <span className="muted small">→ {uniqueSlug(`${inst.slug}-copy`)}</span>
               </div>
             )}
@@ -813,36 +817,35 @@ export function InstancesView({
             {exporting && (
               <div className="stack sub">
                 <label className="check">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={exportSaves}
-                    onChange={(e) => setExportSaves(e.target.checked)}
+                    onCheckedChange={setExportSaves}
                   />
                   <span>{t("instances.exportWithSaves")}</span>
                 </label>
                 <p className="muted small">{t("instances.exportHint")}</p>
                 <div className="row">
-                  <button
+                  <Button
                     type="button"
                     disabled={busy !== null}
                     onClick={() => void exportInstance(inst)}
                   >
                     {busy === `${inst.slug}:export` ? "…" : t("instances.export")}
-                  </button>
-                  <button
+                  </Button>
+                  <Button
                     type="button"
                     disabled={busy !== null}
                     onClick={() => void exportModpack(inst)}
                   >
                     {busy === `${inst.slug}:exportPack` ? "…" : t("instances.exportModpack")}
-                  </button>
-                  <button type="button" className="link" onClick={() => setExportOf(null)}>
+                  </Button>
+                  <Button type="button" className="link" onClick={() => setExportOf(null)}>
                     {t("common.cancel")}
-                  </button>
+                  </Button>
                 </div>
                 <label className="field inline">
                   <span>{t("instances.exportModpackVersion")}</span>
-                  <input
+                  <Input
                     value={packVersion}
                     placeholder={inst.versionId}
                     onChange={(e) => setPackVersion(e.target.value)}
@@ -975,19 +978,19 @@ function LoaderPanel({ inst, busy, run, onError, onDone }: LoaderPanelProps) {
       )}
       <div className="row">
         {LOADER_KINDS.map((k) => (
-          <button
+          <Button
             key={k}
             type="button"
             className={k === kind ? "tab active" : "tab"}
             onClick={() => setKind(k)}
           >
             {LOADER_LABELS[k]}
-          </button>
+          </Button>
         ))}
       </div>
       <label className="field">
         <span>{t("instances.loaderVersion")}</span>
-        <select
+        <NativeSelect
           value={picked}
           disabled={versions === null}
           onChange={(e) => setPicked(e.target.value)}
@@ -1001,24 +1004,24 @@ function LoaderPanel({ inst, busy, run, onError, onDone }: LoaderPanelProps) {
               {v.stable === false ? ` · ${t("instances.loaderDev")}` : ""}
             </option>
           ))}
-        </select>
+        </NativeSelect>
       </label>
       <p className="muted small">
         {t("instances.loaderHint", { game: gameVersion, id: inst.versionId })}
       </p>
       <div className="row">
-        <button type="button" disabled={busy !== null || !picked} onClick={() => void install()}>
+        <Button type="button" disabled={busy !== null || !picked} onClick={() => void install()}>
           {installing ? "…" : inst.loader ? t("instances.loaderChange") : t("instances.loaderInstall")}
-        </button>
+        </Button>
         {inst.loader && (
-          <button
+          <Button
             type="button"
             className="link"
             disabled={busy !== null}
             onClick={() => void remove()}
           >
             {removing ? "…" : t("instances.loaderRemove")}
-          </button>
+          </Button>
         )}
       </div>
     </div>
@@ -1062,14 +1065,14 @@ function SettingsPanel({
       <div className="grid-2">
         <label className="field">
           <span>{t("instances.name")}</span>
-          <input
+          <Input
             value={form.name}
             onChange={(e) => onChange({ name: e.target.value })}
           />
         </label>
         <label className="field">
           <span>{t("instances.version")}</span>
-          <input
+          <Input
             value={form.versionId}
             list="compass-known-versions"
             onChange={(e) => onChange({ versionId: e.target.value })}
@@ -1077,7 +1080,7 @@ function SettingsPanel({
         </label>
         <label className="field">
           <span>{t("instances.memoryMb")}</span>
-          <input
+          <Input
             type="number"
             min={512}
             step={512}
@@ -1090,14 +1093,14 @@ function SettingsPanel({
         <label className="field">
           <span>{t("instances.javaPath")}</span>
           <span className="row">
-            <input
+            <Input
               value={form.javaPath ?? ""}
               placeholder="—"
               onChange={(e) => onChange({ javaPath: e.target.value || null })}
             />
-            <button type="button" onClick={onPickJava}>
+            <Button type="button" onClick={onPickJava}>
               {t("instances.pickJava")}
-            </button>
+            </Button>
           </span>
         </label>
       </div>
@@ -1110,7 +1113,7 @@ function SettingsPanel({
       <div className="grid-2">
         <label className="field">
           <span>{t("instances.extraJvm")}</span>
-          <textarea
+          <Textarea
             rows={3}
             value={form.extraJvmArgs.join("\n")}
             onChange={(e) => onArgsChange("extraJvmArgs", e.target.value)}
@@ -1118,7 +1121,7 @@ function SettingsPanel({
         </label>
         <label className="field">
           <span>{t("instances.extraGame")}</span>
-          <textarea
+          <Textarea
             rows={3}
             value={form.extraGameArgs.join("\n")}
             onChange={(e) => onArgsChange("extraGameArgs", e.target.value)}
@@ -1128,12 +1131,11 @@ function SettingsPanel({
       <p className="muted small">{t("instances.argsHint")}</p>
 
       <label className="check">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={form.resolution !== null}
-          onChange={(e) =>
+          onCheckedChange={(checked) =>
             onChange({
-              resolution: e.target.checked ? { width: 1920, height: 1080 } : null,
+              resolution: checked ? { width: 1920, height: 1080 } : null,
             })
           }
         />
@@ -1143,7 +1145,7 @@ function SettingsPanel({
         <div className="row sub">
           <label className="field inline">
             <span>{t("instances.width")}</span>
-            <input
+            <Input
               type="number"
               min={160}
               value={form.resolution.width}
@@ -1154,7 +1156,7 @@ function SettingsPanel({
           </label>
           <label className="field inline">
             <span>{t("instances.height")}</span>
-            <input
+            <Input
               type="number"
               min={160}
               value={form.resolution.height}
@@ -1168,11 +1170,10 @@ function SettingsPanel({
       {!form.resolution && <p className="muted small">{t("instances.resolutionAuto")}</p>}
 
       <label className="check">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={form.server !== null}
-          onChange={(e) =>
-            onChange({ server: e.target.checked ? { host: "", port: null } : null })
+          onCheckedChange={(checked) =>
+            onChange({ server: checked ? { host: "", port: null } : null })
           }
         />
         <span>{t("instances.server")}</span>
@@ -1181,7 +1182,7 @@ function SettingsPanel({
         <div className="row sub">
           <label className="field inline grow">
             <span>{t("instances.serverHost")}</span>
-            <input
+            <Input
               value={form.server.host}
               placeholder="play.example.com"
               onChange={(e) => onChange({ server: { ...form.server!, host: e.target.value } })}
@@ -1189,7 +1190,7 @@ function SettingsPanel({
           </label>
           <label className="field inline">
             <span>{t("instances.serverPort")}</span>
-            <input
+            <Input
               type="number"
               min={1}
               max={65535}
@@ -1208,21 +1209,20 @@ function SettingsPanel({
       )}
 
       <label className="check">
-        <input
-          type="checkbox"
+        <Checkbox
           checked={form.demo}
-          onChange={(e) => onChange({ demo: e.target.checked })}
+          onCheckedChange={(checked) => onChange({ demo: checked })}
         />
         <span>{t("instances.demo")}</span>
       </label>
 
       <div className="row">
-        <button type="button" disabled={saving} onClick={onSave}>
+        <Button type="button" disabled={saving} onClick={onSave}>
           {saving ? "…" : t("instances.save")}
-        </button>
-        <button type="button" className="link" onClick={onClose}>
+        </Button>
+        <Button type="button" className="link" onClick={onClose}>
           {t("common.cancel")}
-        </button>
+        </Button>
       </div>
     </div>
   );

@@ -1,5 +1,5 @@
-/* 品牌取值对齐 web（docs/src/content/docs 与 web/src/app/globals.css 的暗色 token）：
-   同一套 primary/accent/highlight 与 surface 层级，桌面端不引 webfont，只用系统字体栈回落。 */
+/* 品牌语义色来自 docs/src/content/docs/design/tokens.md。
+   桌面端不引远程 webfont，正文保留系统字体栈；控件使用 GrassCN 离线字形。 */
 :root {
   --font-sans:
     Inter, "Noto Sans SC", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui,
@@ -9,12 +9,12 @@
 
   --bg: #0b1026;
   --surface: #1a1f3a;
-  --surface-raised: #232a4d;
+  --surface-raised: #2a3150;
   --border: #2a3150;
   --text: #e6e9f5;
   --text-muted: #9aa0b8;
-  --primary: #4f46e5;
-  --primary-hover: #4338ca;
+  --primary: #6366f1;
+  --primary-hover: #818cf8;
   --accent: #8b5cf6;
   --highlight: #38bdf8;
   --danger: #f43f5e;
@@ -23,12 +23,12 @@
 }
 
 [data-theme="light"] {
-  --bg: #f5f6fb;
+  --bg: #f8fafc;
   --surface: #ffffff;
-  --surface-raised: #f0f1f8;
-  --border: #dfe2ef;
-  --text: #161a2b;
-  --text-muted: #5b6178;
+  --surface-raised: #e2e8f0;
+  --border: #e2e8f0;
+  --text: #0f172a;
+  --text-muted: #64748b;
   --primary: #4f46e5;
   --primary-hover: #4338ca;
 }
@@ -56,17 +56,22 @@ body {
 
 .shell {
   display: grid;
-  grid-template-columns: 216px 1fr;
+  grid-template-columns: 208px minmax(0, 1fr);
   min-height: 100%;
 }
 
 .sidebar {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  height: 100dvh;
+  align-self: start;
   display: flex;
   flex-direction: column;
   gap: 4px;
   padding: 16px 12px;
   border-right: 1px solid var(--border);
-  background: var(--surface);
+  background: var(--bg);
 }
 
 .brand {
@@ -79,34 +84,20 @@ body {
   letter-spacing: 0.01em;
 }
 
-.dot {
-  width: 12px;
-  height: 12px;
-  border-radius: 9999px;
-  background: linear-gradient(135deg, var(--highlight), var(--primary), var(--accent));
+.brand-icon {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
 }
 
 .nav-item {
-  text-align: left;
-  padding: 8px 10px;
-  border: 0;
-  border-radius: 8px;
-  background: transparent;
-  color: var(--text-muted);
-  font: inherit;
-  cursor: pointer;
-}
-
-.nav-item:hover {
-  background: var(--surface-raised);
-  color: var(--text);
+  width: 100%;
+  justify-content: flex-start;
 }
 
 .nav-item.active {
-  background: var(--surface-raised);
-  color: var(--text);
-  box-shadow: inset 2px 0 0 var(--primary);
-  font-weight: 500;
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 .sidebar-footer {
@@ -128,6 +119,7 @@ body {
 }
 
 .content {
+  min-width: 0;
   padding: 24px;
   overflow-y: auto;
   display: flex;
@@ -135,11 +127,28 @@ body {
   gap: 16px;
 }
 
+.content > * {
+  width: 100%;
+  max-width: 1200px;
+  margin-inline: auto;
+}
+
+.page-heading h1 {
+  margin: 0;
+  font-size: 24px;
+  font-weight: 600;
+}
+
+.page-heading {
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border);
+}
+
 /* ---- 布局与卡片 ---- */
 
 .grid-2 {
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 16px;
   align-items: start;
 }
@@ -149,9 +158,11 @@ body {
 }
 
 .card {
+  min-width: 0;
+  overflow-x: auto;
   background: var(--surface);
   border: 1px solid var(--border);
-  border-radius: 12px;
+  border-radius: 0;
   padding: 16px;
   display: flex;
   flex-direction: column;
@@ -189,6 +200,8 @@ body {
 
 .row {
   display: flex;
+  flex-wrap: wrap;
+  min-width: 0;
   align-items: center;
   gap: 8px;
 }
@@ -210,61 +223,61 @@ body {
   font-size: 12px;
 }
 
-input,
-select,
-button {
-  font: inherit;
-}
-
-input,
-select {
-  background: var(--bg);
-  border: 1px solid var(--border);
-  color: var(--text);
-  border-radius: 8px;
-  padding: 8px 10px;
+.mc-input,
+.mc-textarea,
+.mc-native-select-control,
+.mc-native-select-wrapper {
+  width: 100%;
   min-width: 0;
 }
 
-input:focus-visible,
-select:focus-visible,
-button:focus-visible {
+.mc-button {
+  width: auto;
+  max-width: 100%;
+  padding-inline: 12px;
+}
+
+/* 上游固定宽按钮用绝对定位标签；自适应工具栏必须让真实标签参与宽度计算。 */
+.mc-button > .mc-button-label {
+  position: relative;
+  left: auto;
+  top: auto;
+  transform: none;
+}
+
+.field .row > .mc-input {
+  flex: 1 1 160px;
+  width: auto;
+}
+
+.row > .mc-native-select-wrapper {
+  flex: 1 1 180px;
+  width: auto;
+  max-width: 400px;
+}
+
+.mc-native-select-art .mc-select-trigger {
+  width: 100%;
+}
+
+.field.inline:has(> .mc-native-select-wrapper) {
+  flex: 1 1 240px;
+  min-width: 180px;
+  max-width: 400px;
+}
+
+.row > .mc-input {
+  flex: 1 1 180px;
+  width: auto;
+}
+
+.mc-button:focus-visible,
+.mc-input:focus-visible,
+.mc-textarea:focus-visible,
+.mc-checkbox:focus-visible,
+.mc-native-select-control:focus-visible {
   outline: 2px solid var(--primary);
-  outline-offset: 1px;
-}
-
-button {
-  background: var(--primary);
-  color: #fff;
-  border: 0;
-  border-radius: 8px;
-  padding: 8px 14px;
-  font-weight: 500;
-  cursor: pointer;
-}
-
-button:hover:not(:disabled) {
-  background: var(--primary-hover);
-}
-
-button:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-button.link {
-  background: transparent;
-  color: var(--highlight);
-  padding: 4px 0;
-  font-weight: 400;
-  text-decoration: underline;
-  text-underline-offset: 3px;
-}
-
-button.link:hover:not(:disabled) {
-  background: transparent;
-  color: var(--highlight);
-  filter: brightness(1.15);
+  outline-offset: 2px;
 }
 
 /* ---- 文本与标签 ---- */
@@ -287,7 +300,7 @@ button.link:hover:not(:disabled) {
 
 .badge {
   border: 1px solid var(--border);
-  border-radius: 999px;
+  border-radius: 0;
   padding: 1px 8px;
   font-size: 11px;
   color: var(--text-muted);
@@ -300,11 +313,6 @@ button.link:hover:not(:disabled) {
 }
 
 .chip {
-  background: var(--surface-raised);
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  padding: 1px 8px;
-  font-size: 11px;
   font-variant-numeric: tabular-nums;
 }
 
@@ -335,9 +343,11 @@ button.link:hover:not(:disabled) {
 @media (max-width: 900px) {
   .shell {
     grid-template-columns: 1fr;
+    grid-template-rows: auto 1fr;
   }
 
   .sidebar {
+    height: auto;
     flex-direction: row;
     align-items: center;
     gap: 8px;
@@ -362,7 +372,20 @@ button.link:hover:not(:disabled) {
   }
 
   .nav-item.active {
-    box-shadow: inset 0 -2px 0 var(--primary);
+    outline-offset: -2px;
+  }
+
+  .sidebar .mc-button {
+    flex-shrink: 0;
+    width: auto;
+  }
+
+  .brand {
+    flex-shrink: 0;
+  }
+
+  .sidebar-footer {
+    flex-shrink: 0;
   }
 
   .grid-2 {
@@ -384,9 +407,8 @@ button.link:hover:not(:disabled) {
   font-size: 12px;
 }
 
-.check input {
-  width: auto;
-  padding: 0;
+.check .mc-checkbox {
+  flex-shrink: 0;
 }
 
 select[multiple] {
@@ -394,15 +416,10 @@ select[multiple] {
   padding: 4px;
 }
 
-select[multiple] option {
-  padding: 3px 8px;
-  border-radius: 6px;
-}
-
 .log {
   background: var(--bg);
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 8px 10px;
   max-height: 55vh;
   overflow-y: auto;
@@ -432,6 +449,8 @@ select[multiple] option {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .field.inline > span {
@@ -449,23 +468,12 @@ select[multiple] option {
 }
 
 .tab {
-  background: transparent;
-  border: 1px solid var(--border);
-  border-radius: 999px;
-  color: var(--text-muted);
-  padding: 4px 12px;
-  font-size: 12px;
-}
-
-.tab:hover {
-  color: var(--text);
-  border-color: var(--accent);
+  flex-shrink: 0;
 }
 
 .tab.active {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: #fff;
+  outline: 2px solid var(--primary);
+  outline-offset: -2px;
 }
 
 .items {
@@ -517,9 +525,7 @@ select[multiple] option {
   color: var(--text-muted);
 }
 
-textarea {
-  font-family: var(--font-mono);
-  font-size: 12px;
+.mc-textarea {
   resize: vertical;
 }
 
@@ -538,13 +544,7 @@ textarea {
 
 /* ---- P5-W13：日志查看器与崩溃诊断 ---- */
 
-/* 级别过滤用的 chip 是按钮（现有的 .chip 都是 span），补上按钮该有的手感 */
-button.chip {
-  cursor: pointer;
-  font-family: inherit;
-  color: inherit;
-}
-
+/* 级别过滤复用 GrassCN 按钮；未选中的级别保留划线提示。 */
 .chip.off {
   opacity: 0.45;
   text-decoration: line-through;
@@ -572,7 +572,7 @@ button.chip {
 
 .finding {
   border: 1px solid var(--border);
-  border-radius: 8px;
+  border-radius: 0;
   padding: 10px 12px;
 }
 

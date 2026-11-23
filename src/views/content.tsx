@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { NativeSelect } from "../components/ui/native-select";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -192,18 +195,19 @@ export function ContentView({ initialSlug }: { initialSlug?: string }) {
           <div className="row">
             <label className="field inline">
               <span>{t("content.instance")}</span>
-              <select
+              <NativeSelect
                 value={slug}
+                disabled={instances.length === 0}
                 onChange={(e) => setSlug(e.target.value)}
                 aria-label={t("content.instance")}
               >
-                <option value="" />
+                <option value="">—</option>
                 {instances.map((i) => (
                   <option key={i.slug} value={i.slug}>
                     {i.name}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </label>
           </div>
         </div>
@@ -222,28 +226,28 @@ export function ContentView({ initialSlug }: { initialSlug?: string }) {
             <div className="row between tabs">
               <div className="row">
                 {CONTENT_KINDS.map((k) => (
-                  <button
+                  <Button
                     key={k}
                     type="button"
                     className={k === kind ? "tab active" : "tab"}
                     onClick={() => setKind(k)}
                   >
                     {t(`content.kind.${k}`)}
-                  </button>
+                  </Button>
                 ))}
               </div>
               <div className="row">
-                <button type="button" disabled={busy !== null} onClick={() => void pickAndImport()}>
+                <Button type="button" disabled={busy !== null} onClick={() => void pickAndImport()}>
                   {busy === "import" ? "…" : t("content.import")}
-                </button>
-                <button
+                </Button>
+                <Button
                   type="button"
                   className="link"
                   disabled={!listing}
                   onClick={() => listing && void revealItemInDir(listing.dir)}
                 >
                   {t("content.openDir")}
-                </button>
+                </Button>
               </div>
             </div>
 
@@ -261,9 +265,9 @@ export function ContentView({ initialSlug }: { initialSlug?: string }) {
               <>
                 <p className="muted small">{t("content.dependsHint")}</p>
                 <div className="row">
-                  <button type="button" className="link" disabled={busy !== null} onClick={() => void runCheck()}>
+                  <Button type="button" className="link" disabled={busy !== null} onClick={() => void runCheck()}>
                     {busy === "check" ? "…" : t("content.check")}
-                  </button>
+                  </Button>
                 </div>
               </>
             )}
@@ -391,7 +395,7 @@ export function ContentView({ initialSlug }: { initialSlug?: string }) {
                       <td>
                         <div className="row">
                           {kind === "mods" && (
-                            <button
+                            <Button
                               type="button"
                               className="link"
                               disabled={busy !== null}
@@ -402,16 +406,16 @@ export function ContentView({ initialSlug }: { initialSlug?: string }) {
                                 : item.enabled
                                   ? t("content.disable")
                                   : t("content.enable")}
-                            </button>
+                            </Button>
                           )}
-                          <button
+                          <Button
                             type="button"
                             className="link"
                             disabled={busy !== null}
                             onClick={() => void remove(item.fileName)}
                           >
                             {busy === `remove:${item.fileName}` ? "…" : t("content.remove")}
-                          </button>
+                          </Button>
                         </div>
                       </td>
                     </tr>
@@ -537,7 +541,7 @@ function HoardBrowser({ slug, kind, gameVersion, onError, onInstalled }: HoardBr
       <section className="card">
         <h2>{t("mods.online")}</h2>
         <div className="row">
-          <input
+          <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
             onKeyDown={(e) => {
@@ -546,9 +550,9 @@ function HoardBrowser({ slug, kind, gameVersion, onError, onInstalled }: HoardBr
             placeholder={t("mods.searchPlaceholder")}
             aria-label={t("mods.searchPlaceholder")}
           />
-          <button onClick={() => void search()} disabled={busy}>
+          <Button onClick={() => void search()} disabled={busy}>
             {busy ? "…" : t("mods.search")}
-          </button>
+          </Button>
         </div>
         <p className="muted small">
           {slug
@@ -609,7 +613,7 @@ function HoardBrowser({ slug, kind, gameVersion, onError, onInstalled }: HoardBr
                         </span>
                       )}
                     </span>
-                    <button
+                    <Button
                       type="button"
                       disabled={!slug || kind === "saves" || installing !== null}
                       title={slug ? undefined : t("mods.pickInstanceFirst")}
@@ -620,7 +624,7 @@ function HoardBrowser({ slug, kind, gameVersion, onError, onInstalled }: HoardBr
                       }}
                     >
                       {installing === v.id ? "…" : t("mods.install")}
-                    </button>
+                    </Button>
                   </div>
                 );
               })}

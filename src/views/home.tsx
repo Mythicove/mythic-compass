@@ -4,6 +4,9 @@ import { useI18n } from "../i18n";
 import { useConfig } from "../App";
 import { ipc, type AccountEntry, type AccountView, type Instance } from "../lib/ipc";
 import { SkinPreview } from "../components/skin-preview";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { NativeSelect } from "../components/ui/native-select";
 
 interface Props {
   account: AccountView | null;
@@ -122,7 +125,7 @@ export function HomeView({ account, checking, onSignIn }: Props) {
           <form className="stack" onSubmit={(e) => void submit(e)}>
             <label className="field">
               <span>{t("account.playerName")}</span>
-              <input
+              <Input
                 value={playerName}
                 onChange={(e) => setPlayerName(e.target.value)}
                 autoComplete="username"
@@ -131,7 +134,7 @@ export function HomeView({ account, checking, onSignIn }: Props) {
             </label>
             <label className="field">
               <span>{t("account.launcherPassword")}</span>
-              <input
+              <Input
                 type="password"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
@@ -139,17 +142,17 @@ export function HomeView({ account, checking, onSignIn }: Props) {
               />
             </label>
             <p className="muted small">{t("account.signInHint")}</p>
-            <button type="submit" disabled={busy || !playerName.trim() || !password}>
+            <Button type="submit" disabled={busy || !playerName.trim() || !password}>
               {busy ? "…" : t("account.signIn")}
-            </button>
+            </Button>
             {config && (
-              <button
+              <Button
                 type="button"
                 className="link"
                 onClick={() => void openUrl(`${config.apiUrl}/profile`)}
               >
                 {t("account.openSite")}
-              </button>
+              </Button>
             )}
           </form>
         )}
@@ -163,7 +166,7 @@ export function HomeView({ account, checking, onSignIn }: Props) {
         {canChoosePreview && (
           <label className="field inline">
             <span>{t("home.skinPreviewPlayer")}</span>
-            <select
+            <NativeSelect
               value={previewChoices.find((a) => a.playerName === previewName)?.id ?? ""}
               onChange={(e) => setPreviewId(e.target.value)}
             >
@@ -172,7 +175,7 @@ export function HomeView({ account, checking, onSignIn }: Props) {
                   {a.playerName}
                 </option>
               ))}
-            </select>
+            </NativeSelect>
           </label>
         )}
         <SkinPreview skinUrl={skinUrl} />

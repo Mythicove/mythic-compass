@@ -16,7 +16,6 @@ interface Painter {
 let sharedPainter: Painter | null | undefined;
 const targets = new WeakSet<CanvasRenderingContext2D>();
 let targetCount = 0;
-const origins = new WeakMap<CanvasRenderingContext2D, DOMRect>();
 
 export type UnihexAtlas = Record<
   string,
@@ -36,13 +35,6 @@ export const setUnihexAtlas = function setUnihexAtlas(
   }
 };
 
-export const positionUnihex = function positionUnihex(
-  context: CanvasRenderingContext2D,
-  bounds: DOMRect
-) {
-  origins.set(context, bounds);
-};
-
 const releasePainter = function releasePainter(
   painter: Painter | null | undefined
 ) {
@@ -60,7 +52,6 @@ const releasePainter = function releasePainter(
 export const disposeUnihex = function disposeUnihex(
   context: CanvasRenderingContext2D
 ) {
-  origins.delete(context);
   atlases.delete(context);
 
   if (!targets.delete(context)) {
@@ -202,17 +193,14 @@ export const paintUnihexGPU = function paintUnihexGPU(
   }
 
   const { gl, canvas, program } = painter;
-  const bounds = origins.get(context);
-
-  const originX = Math.round(bounds?.x ?? 0);
-  const originY = Math.round(bounds?.y ?? 0);
-
-  if (canvas.width !== innerWidth) {
-    canvas.width = innerWidth;
+  // Glyphs belong to the target bitmap, including when the element is outside
+  // the visible viewport. Viewport coordinates clipped long-page screenshots.
+  if (canvas.width !== context.canvas.width) {
+    canvas.width = context.canvas.width;
   }
 
-  if (canvas.height !== innerHeight) {
-    canvas.height = innerHeight;
+  if (canvas.height !== context.canvas.height) {
+    canvas.height = context.canvas.height;
   }
 
   gl.viewport(0, 0, canvas.width, canvas.height);
@@ -263,8 +251,8 @@ export const paintUnihexGPU = function paintUnihexGPU(
       rgba
     );
 
-    const left = originX + x * scale;
-    const top = originY + y * scale;
+    const left = x * scale;
+    const top = y * scale;
     const right = left + (glyph.width / 2) * scale;
     const bottom = top + 8 * scale;
 
@@ -297,17 +285,7 @@ export const paintUnihexGPU = function paintUnihexGPU(
     return false;
   }
 
-  context.drawImage(
-    canvas,
-    originX,
-    originY,
-    context.canvas.width,
-    context.canvas.height,
-    0,
-    0,
-    context.canvas.width,
-    context.canvas.height
-  );
+  context.drawImage(canvas, 0, 0);
 
   return true;
 };

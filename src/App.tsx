@@ -16,6 +16,7 @@ import { InstancesView } from "./views/instances";
 import { ContentView } from "./views/content";
 import { SettingsView } from "./views/settings";
 import { LogsView } from "./views/logs";
+import { Button } from "./components/ui/button";
 import "./shell.css";
 
 type View = "home" | "instances" | "content" | "logs" | "settings";
@@ -256,17 +257,18 @@ function Shell() {
     <div className="shell">
       <nav className="sidebar">
         <div className="brand">
-          <span className="dot" />
+          <img className="brand-icon" src="/icon.png" alt="" />
           <span>{t("app.name")}</span>
         </div>
         {VIEWS.map((v) => (
-          <button
+          <Button
             key={v.id}
+            aria-current={view === v.id ? "page" : undefined}
             className={view === v.id ? "nav-item active" : "nav-item"}
             onClick={() => setView(v.id)}
           >
             {t(v.labelKey)}
-          </button>
+          </Button>
         ))}
         <div className="sidebar-footer">
           {account ? (
@@ -274,9 +276,9 @@ function Shell() {
               <span className="who" title={account.playerUuid}>
                 {account.playerName}
               </span>
-              <button className="link" onClick={() => void signOut()}>
+              <Button className="link" onClick={() => void signOut()}>
                 {t("account.signOut")}
-              </button>
+              </Button>
             </>
           ) : (
             <span className="muted">{t("account.notSignedIn")}</span>
@@ -285,17 +287,18 @@ function Shell() {
       </nav>
 
       <main className="content">
+        {view !== "home" && <header className="page-heading"><h1>{t(`nav.${view}`)}</h1></header>}
         {error && (
           <div className="error" role="alert">
             <span>{error.message}</span>
             {errorAction && config?.apiUrl && (
-              <button
+              <Button
                 type="button"
                 className="link"
                 onClick={() => void openUrl(`${config.apiUrl}${errorAction.path}`)}
               >
                 {t(errorAction.labelKey)}
-              </button>
+              </Button>
             )}
           </div>
         )}

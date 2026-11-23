@@ -1,0 +1,42 @@
+@layer theme, base, components, utilities;
+@import "./minecraft-control-assets.css";
+
+@layer components {
+  .mc-checkbox {
+    --mc-pixel: calc(1px * var(--mc-scale, 2));
+    display: inline-block;
+    position: relative;
+    flex-shrink: 0;
+    width: calc(17 * var(--mc-pixel));
+    height: calc(17 * var(--mc-pixel));
+    padding: 0;
+    margin: 0;
+    border: 0;
+    border-radius: 0;
+    outline: none;
+    background: var(--mc-checkbox-normal) center / 100% 100% no-repeat;
+    image-rendering: pixelated;
+    cursor: pointer;
+  }
+  .mc-checkbox[data-checked] {
+    background-image: var(--mc-checkbox-checked);
+  }
+  .mc-checkbox:focus {
+    background-image: var(--mc-checkbox-focused);
+  }
+  .mc-checkbox[data-checked]:focus {
+    background-image: var(--mc-checkbox-checked-focused);
+  }
+  .mc-checkbox:is(:disabled, [data-disabled]) {
+    cursor: default;
+  }
+  /* Mixed state is a web composition; vanilla Checkbox only has boolean states. */
+  .mc-checkbox[data-indeterminate] > .mc-checkbox-indicator {
+    position: absolute;
+    left: calc(5 * var(--mc-pixel));
+    top: calc(8 * var(--mc-pixel));
+    width: calc(7 * var(--mc-pixel));
+    height: var(--mc-pixel);
+    background: white;
+  }
+}

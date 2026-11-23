@@ -1,4 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { Checkbox } from "../components/ui/checkbox";
+import { NativeSelect } from "../components/ui/native-select";
 import { revealItemInDir } from "@tauri-apps/plugin-opener";
 import { errorKey, useI18n } from "../i18n";
 import { clearGameLogs, useGameLogs } from "../App";
@@ -197,7 +201,7 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
           <div className="row between">
             <h2>{t("logs.diagnosis")}</h2>
             <div className="row">
-              <select
+              <NativeSelect
                 aria-label={t("logs.instance")}
                 value={slug}
                 onChange={(e) => {
@@ -210,10 +214,10 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
                     {i.name}
                   </option>
                 ))}
-              </select>
-              <button type="button" className="link" onClick={() => void reload()}>
+              </NativeSelect>
+              <Button type="button" className="link" onClick={() => void reload()}>
                 {t("logs.refresh")}
-              </button>
+              </Button>
             </div>
           </div>
           {diag === null ? (
@@ -240,9 +244,9 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
                       })}
                     </strong>
                     {f.action && (
-                      <button type="button" className="link" onClick={() => runAction(f)}>
+                      <Button type="button" className="link" onClick={() => runAction(f)}>
                         {t(`diagnose.action.${f.action.kind}`)}
-                      </button>
+                      </Button>
                     )}
                   </div>
                   <span className={`badge ${f.severity === "fatal" ? "" : "off"}`}>
@@ -263,18 +267,18 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
         <div className="row between">
           <h2>{t("logs.title")}</h2>
           <div className="row">
-            <button type="button" className="link" onClick={() => void copyAll()}>
+            <Button type="button" className="link" onClick={() => void copyAll()}>
               {t("logs.copy")}
-            </button>
+            </Button>
             {slug && (
-              <button type="button" className="link" onClick={() => void openLogsDir()}>
+              <Button type="button" className="link" onClick={() => void openLogsDir()}>
                 {t("logs.openDir")}
-              </button>
+              </Button>
             )}
             {!open && (
-              <button type="button" className="link" onClick={clearGameLogs}>
+              <Button type="button" className="link" onClick={clearGameLogs}>
                 {t("logs.clear")}
-              </button>
+              </Button>
             )}
           </div>
         </div>
@@ -297,7 +301,7 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
         )}
 
         <div className="row sub">
-          <input
+          <Input
             type="search"
             value={query}
             placeholder={t("logs.search")}
@@ -305,18 +309,17 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
             onChange={(e) => setQuery(e.target.value)}
           />
           <label className="field inline">
-            <input
-              type="checkbox"
+            <Checkbox
               checked={follow && !open}
               disabled={!!open}
-              onChange={(e) => setFollow(e.target.checked)}
+              onCheckedChange={setFollow}
             />
             <span>{t("logs.follow")}</span>
           </label>
         </div>
         <div className="chips">
           {LEVELS.map((lvl) => (
-            <button
+            <Button
               key={lvl}
               type="button"
               className={hidden.has(lvl) ? "chip off" : "chip"}
@@ -324,7 +327,7 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
               onClick={() => toggleLevel(lvl)}
             >
               {t(`logs.level.${lvl}`)}
-            </button>
+            </Button>
           ))}
         </div>
 
@@ -380,7 +383,7 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
                       {(a.size / 1024).toFixed(0)} KB{a.compressed ? " (gz)" : ""}
                     </td>
                     <td>
-                      <button
+                      <Button
                         type="button"
                         className="link"
                         onClick={() => {
@@ -389,7 +392,7 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
                         }}
                       >
                         {open === a.name ? t("logs.archiveClose") : t("logs.archiveOpen")}
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -402,9 +405,9 @@ export function LogsView({ onOpenContent, onOpenInstances }: LogsViewProps) {
       <section className="card">
         <div className="row between">
           <h2>{t("logs.oplog")}</h2>
-          <button type="button" className="link" onClick={() => void openOplog()}>
+          <Button type="button" className="link" onClick={() => void openOplog()}>
             {t("logs.openDir")}
-          </button>
+          </Button>
         </div>
         <p className="muted small">{t("logs.oplogHint")}</p>
         <pre className="log oplog">{oplog && oplog.trim() ? oplog : t("logs.oplogEmpty")}</pre>

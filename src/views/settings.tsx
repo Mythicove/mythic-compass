@@ -1,4 +1,7 @@
 import { useCallback, useEffect, useState, type FormEvent } from "react";
+import { Button } from "../components/ui/button";
+import { Input } from "../components/ui/input";
+import { NativeSelect } from "../components/ui/native-select";
 import { listen } from "@tauri-apps/api/event";
 import { getVersion } from "@tauri-apps/api/app";
 import { check as checkForUpdate } from "@tauri-apps/plugin-updater";
@@ -327,7 +330,7 @@ export function SettingsView() {
         <h2>{t("settings.servers")}</h2>
         <label className="field">
           <span>{t("settings.apiUrl")}</span>
-          <input
+          <Input
             value={form.apiUrl}
             onChange={(e) => patch({ apiUrl: e.target.value })}
             spellCheck={false}
@@ -335,7 +338,7 @@ export function SettingsView() {
         </label>
         <label className="field">
           <span>{t("settings.hoardUrl")}</span>
-          <input
+          <Input
             value={form.hoardUrl}
             onChange={(e) => patch({ hoardUrl: e.target.value })}
             spellCheck={false}
@@ -347,25 +350,25 @@ export function SettingsView() {
         <h2>{t("settings.appearance")}</h2>
         <label className="field">
           <span>{t("settings.language")}</span>
-          <select
+          <NativeSelect
             value={form.language}
             onChange={(e) => patch({ language: e.target.value })}
           >
             <option value="">{t("settings.languageAuto")}</option>
             <option value="zh-CN">中文（简体）</option>
             <option value="en">English</option>
-          </select>
+          </NativeSelect>
         </label>
         <label className="field">
           <span>{t("settings.theme")}</span>
-          <select
+          <NativeSelect
             value={form.theme}
             onChange={(e) => patch({ theme: e.target.value as Config["theme"] })}
           >
             <option value="system">{t("settings.themeSystem")}</option>
             <option value="dark">{t("settings.themeDark")}</option>
             <option value="light">{t("settings.themeLight")}</option>
-          </select>
+          </NativeSelect>
         </label>
       </section>
 
@@ -373,7 +376,7 @@ export function SettingsView() {
         <h2>{t("settings.downloads")}</h2>
         <label className="field">
           <span>{t("settings.concurrency")}</span>
-          <input
+          <Input
             type="number"
             min={1}
             max={64}
@@ -387,7 +390,7 @@ export function SettingsView() {
         </label>
         <label className="field">
           <span>{t("settings.mirror")}</span>
-          <input
+          <Input
             value={form.download.mirror}
             onChange={(e) => patch({ download: { ...form.download, mirror: e.target.value } })}
             spellCheck={false}
@@ -400,7 +403,7 @@ export function SettingsView() {
         <h2>{t("settings.defaults")}</h2>
         <label className="field">
           <span>{t("settings.memoryMb")}</span>
-          <input
+          <Input
             type="number"
             min={512}
             max={65536}
@@ -414,7 +417,7 @@ export function SettingsView() {
       </section>
 
       <div className="row">
-        <button type="submit">{t("settings.save")}</button>
+        <Button type="submit">{t("settings.save")}</Button>
         {saved && <span className="ok">{t("settings.saved")}</span>}
         {error && (
           <span className="error" role="alert">
@@ -469,23 +472,23 @@ export function SettingsView() {
                     <td>
                       <div className="row">
                         {a.id !== accounts.activeId && (
-                          <button
+                          <Button
                             type="button"
                             className="link"
                             disabled={accountBusy !== null}
                             onClick={() => void switchAccount(a.id)}
                           >
                             {accountBusy === `switch:${a.id}` ? "…" : t("settings.accountUse")}
-                          </button>
+                          </Button>
                         )}
-                        <button
+                        <Button
                           type="button"
                           className="link"
                           disabled={accountBusy !== null}
                           onClick={() => void removeAccount(a)}
                         >
                           {accountBusy === `remove:${a.id}` ? "…" : t("settings.accountRemove")}
-                        </button>
+                        </Button>
                       </div>
                     </td>
                   </tr>
@@ -496,20 +499,20 @@ export function SettingsView() {
           <div className="row sub">
             <label className="field inline grow">
               <span>{t("settings.accountOfflineName")}</span>
-              <input
+              <Input
                 value={offlineName}
                 maxLength={16}
                 placeholder="Steve"
                 onChange={(e) => setOfflineName(e.target.value)}
               />
             </label>
-            <button
+            <Button
               type="button"
               disabled={accountBusy !== null || !offlineName.trim()}
               onClick={() => void addOffline()}
             >
               {accountBusy === "add-offline" ? "…" : t("settings.accountAddOffline")}
-            </button>
+            </Button>
           </div>
           <p className="muted small">{t("settings.accountOfflineHint")}</p>
         </section>
@@ -551,14 +554,14 @@ export function SettingsView() {
                       {c.lastUsedAt ?? t("settings.credentialsNeverUsed")}
                     </td>
                     <td>
-                      <button
+                      <Button
                         type="button"
                         className="link"
                         disabled={credBusy !== null}
                         onClick={() => void revokeCredential(c)}
                       >
                         {credBusy === `revoke:${c.id}` ? "…" : t("settings.credentialsRevoke")}
-                      </button>
+                      </Button>
                     </td>
                   </tr>
                 ))}
@@ -568,7 +571,7 @@ export function SettingsView() {
           <div className="row sub">
             <label className="field inline grow">
               <span>{t("settings.credentialsLabel")}</span>
-              <input
+              <Input
                 value={credLabel}
                 maxLength={64}
                 placeholder={t("settings.credentialsLabelPlaceholder")}
@@ -577,7 +580,7 @@ export function SettingsView() {
             </label>
             <label className="field inline grow">
               <span>{t("settings.credentialsPassword")}</span>
-              <input
+              <Input
                 type="password"
                 value={credPassword}
                 minLength={8}
@@ -591,13 +594,13 @@ export function SettingsView() {
                 }}
               />
             </label>
-            <button
+            <Button
               type="button"
               disabled={credBusy !== null || !credLabel.trim() || credPassword.length < 8}
               onClick={() => void createCredential()}
             >
               {credBusy === "create" ? "…" : t("settings.credentialsCreate")}
-            </button>
+            </Button>
           </div>
           <p className="muted small">{t("settings.credentialsPasswordHint")}</p>
         </section>
@@ -606,9 +609,9 @@ export function SettingsView() {
       <section className="card">
         <div className="row between">
           <h2>{t("settings.java")}</h2>
-          <button type="button" className="link" onClick={() => void reloadJava()}>
+          <Button type="button" className="link" onClick={() => void reloadJava()}>
             {t("logs.refresh")}
-          </button>
+          </Button>
         </div>
         <p className="muted small">{t("settings.javaHint")}</p>
         {javaError && (
@@ -683,7 +686,7 @@ export function SettingsView() {
                           <td className="muted small">{o.versionName || "—"}</td>
                           <td>
                             <div className="row">
-                              <button
+                              <Button
                                 type="button"
                                 className="link"
                                 disabled={javaBusy !== null}
@@ -694,16 +697,16 @@ export function SettingsView() {
                                   : have
                                     ? t("settings.javaReinstall")
                                     : t("settings.javaDownload")}
-                              </button>
+                              </Button>
                               {have && (
-                                <button
+                                <Button
                                   type="button"
                                   className="link"
                                   disabled={javaBusy !== null}
                                   onClick={() => removeJava(o.component)}
                                 >
                                   {javaBusy === `rm:${o.component}` ? "…" : t("settings.javaRemove")}
-                                </button>
+                                </Button>
                               )}
                             </div>
                           </td>
@@ -722,14 +725,14 @@ export function SettingsView() {
         <div className="row between">
           <h2>{t("settings.update")}</h2>
           {update.status !== "unconfigured" && (
-            <button
+            <Button
               type="button"
               className="link"
               disabled={update.status === "checking" || update.status === "installing"}
               onClick={() => void checkUpdate()}
             >
               {update.status === "checking" ? "…" : t("settings.updateCheck")}
-            </button>
+            </Button>
           )}
         </div>
         {update.status === "unconfigured" && (
@@ -754,9 +757,9 @@ export function SettingsView() {
           <div className="stack">
             <p className="small">{t("settings.updateAvailable", { version: update.version ?? "" })}</p>
             {update.notes && <pre className="evidence">{update.notes}</pre>}
-            <button type="button" onClick={() => void installUpdate()}>
+            <Button type="button" onClick={() => void installUpdate()}>
               {t("settings.updateInstall")}
-            </button>
+            </Button>
           </div>
         )}
       </section>
@@ -765,13 +768,13 @@ export function SettingsView() {
         <section className="card">
           <div className="row between">
             <h2>{t("settings.paths")}</h2>
-            <button
+            <Button
               type="button"
               className="link"
               onClick={() => void revealItemInDir(paths.configFile)}
             >
               {t("settings.openDataDir")}
-            </button>
+            </Button>
           </div>
           <p className="muted small">{t("settings.pathsHint")}</p>
           <dl className="paths">

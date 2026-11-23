@@ -6,7 +6,7 @@ import {
   loadUnihex,
   paintUnihex,
 } from "./minecraft-unifont";
-import { positionUnihex, disposeUnihex } from "./minecraft-unifont-gpu";
+import { disposeUnihex } from "./minecraft-unifont-gpu";
 
 const requiresCJKFont = function requiresCJKFont(text: string) {
   for (const character of text) {
@@ -317,7 +317,6 @@ export const attachMinecraftInput = function attachMinecraftInput(
     const height = input.clientHeight;
 
     const bounds = input.getBoundingClientRect();
-    positionUnihex(context, bounds);
 
     if (!width || !height) {
       return;

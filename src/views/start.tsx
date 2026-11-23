@@ -8,6 +8,8 @@ import { SkinPreview } from "../components/skin-preview";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Progress } from "../components/ui/progress";
+import { Checkbox } from "../components/ui/checkbox";
+import { NativeSelect } from "../components/ui/native-select";
 import { getMinecraftSoundVolume, setMinecraftSoundVolume } from "../components/ui/minecraft-sound";
 import { startMessages } from "./start-messages";
 import "./start.css";
@@ -88,12 +90,11 @@ export function StartView({ account, checking, onSignIn }: Props) {
   };
 
   return <div className="start-page">
-    <header className="start-heading"><div><h1>{text.title}</h1><p>{text.intro}</p></div><label className="start-sound"><input type="checkbox" checked={sound} onChange={(e) => { const enabled = e.target.checked; setSound(enabled); setMinecraftSoundVolume(enabled ? 1 : 0); }} />{text.sound}</label></header>
+    <header className="start-heading"><div><h1>{text.title}</h1><p>{text.intro}</p></div><label className="start-sound"><Checkbox checked={sound} onCheckedChange={(enabled) => { setSound(enabled); setMinecraftSoundVolume(enabled ? 1 : 0); }} />{text.sound}</label></header>
     <div className="start-columns">
       <section className="start-play" aria-labelledby="start-instance-title">
-        <div className="start-world" aria-hidden="true"><span className="start-block start-block-back" /><span className="start-block start-block-front" /><span className="start-block start-block-top" /></div>
         <div className="start-play-content"><p className="start-kicker">Minecraft: Java Edition</p><h2 id="start-instance-title">{current?.name ?? text.selectInstance}</h2><p className="start-version">{current?.versionId ?? "—"}</p>
-          <label className="start-field"><span>{text.instance}</span><select className="start-select" value={selected} disabled={!instances?.length || busy} onChange={(e) => setSelected(e.target.value)}><option value="" disabled>{text.selectInstance}</option>{instances?.map((i) => <option key={i.slug} value={i.slug}>{i.name}</option>)}</select></label>
+          <label className="start-field"><span>{text.instance}</span><NativeSelect className="start-select" value={selected} disabled={!instances?.length || busy} onChange={(e) => setSelected(e.target.value)}><option value="" disabled>{text.selectInstance}</option>{instances?.map((i) => <option key={i.slug} value={i.slug}>{i.name}</option>)}</NativeSelect></label>
           {instances === null ? <p role="status">{text.loading}</p> : instances.length === 0 ? <p className="start-hint">{t("home.noInstances")}</p> : null}
           {current?.server && <div className="start-hint" role="status">
             <p>{text.clientVersion}: {current.loader?.gameVersion ?? current.versionId} · {current.server.host}:{current.server.port ?? 25565}</p>
@@ -112,7 +113,7 @@ export function StartView({ account, checking, onSignIn }: Props) {
       </section>
       <aside className="start-identity"><h2>{account ? account.playerName : t("account.signIn")}</h2>
         {account ? <><p className="start-hint">{account.kind === "offline" ? text.offline : text.siteAccount}</p><div className="start-skin"><SkinPreview key={`${account.apiUrl}/${account.playerName}`} skinUrl={account.kind === "yggdrasil" && account.apiUrl === config?.apiUrl ? skin : null} /></div></> : checking ? <p role="status">{t("account.checking")}</p> : <form onSubmit={(e) => void login(e)} className="start-login"><label className="start-field"><span>{t("account.playerName")}</span><Input autoComplete="username" required value={name} onChange={(e) => setName(e.target.value)} style={{ width: "100%" }} /></label><label className="start-field"><span>{text.password}</span><Input type="password" autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} style={{ width: "100%" }} /></label><p className="start-hint">{text.passwordHint}</p><Button disabled={signingIn} type="submit" style={{ width: "100%" }}>{signingIn ? text.loading : t("account.signIn")}</Button></form>}
-        {config?.apiUrl && <button type="button" className="start-site-link" onClick={() => { void openUrl(`${config.apiUrl}/servers`).catch(() => setError(text.openFailed)); }}>{text.site}</button>}
+        {config?.apiUrl && <Button type="button" className="start-site-link" onClick={() => { void openUrl(`${config.apiUrl}/servers`).catch(() => setError(text.openFailed)); }}>{text.site}</Button>}
       </aside>
     </div>
     <p className="start-footer">{text.manageHint}</p>

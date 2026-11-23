@@ -1,0 +1,42 @@
+@layer theme, base, components, utilities;
+@import "./minecraft-text-assets.css";
+@layer components {
+  .mc-bitmap {
+    display: inline-flex;
+    image-rendering: pixelated;
+    --mc-pixel: calc(1px * var(--mc-scale, 2));
+  }
+  .mc-bitmap > .mc-text-pixels {
+    display: inline-flex;
+    filter: drop-shadow(
+      var(--mc-pixel) var(--mc-pixel) 0 var(--mc-shadow, #3f3f3f)
+    );
+  }
+  .mc-bitmap .mc-glyph {
+    display: block;
+    width: calc(var(--mc-advance) * var(--mc-pixel));
+    height: calc(8 * var(--mc-pixel));
+    flex-shrink: 0;
+    background-color: var(--mc-ink, #fff);
+    mask-image: var(--mc-ascii-atlas);
+    mask-size: calc(var(--mc-atlas-size) * var(--mc-pixel))
+      calc(var(--mc-atlas-size) * var(--mc-pixel));
+    mask-position: calc(-1 * var(--mc-glyph-x) * var(--mc-pixel))
+      calc(-1 * var(--mc-glyph-y) * var(--mc-pixel));
+    mask-repeat: no-repeat;
+  }
+  .mc-bitmap .mc-glyph-space {
+    visibility: hidden;
+  }
+  .mc-bitmap > .mc-text-accessible {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+    border: 0;
+  }
+}

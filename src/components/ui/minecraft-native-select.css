@@ -1,0 +1,70 @@
+@layer components {
+  .mc-native-select-wrapper {
+    position: relative;
+    display: inline-block;
+    width: fit-content;
+    vertical-align: middle;
+    --mc-pixel: calc(1px*var(--mc-scale, 2));
+  }
+  .mc-native-select-control {
+    display: block;
+    box-sizing: border-box;
+    width: calc(200*var(--mc-pixel));
+    height: calc(20*var(--mc-pixel));
+    min-width: calc(6*var(--mc-pixel));
+    min-height: calc(6*var(--mc-pixel));
+    margin: 0;
+    padding: 0;
+    border: 0;
+    opacity: 0;
+    cursor: pointer;
+    font-family: "Minecraft Bitmap", monospace;
+    font-size: calc(8*var(--mc-pixel));
+    border-radius: 0;
+    outline: none;
+  }
+  .mc-native-select-control:disabled {
+    cursor: default;
+  }
+  .mc-native-select-art {
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+  }
+  .mc-native-select-wrapper:has(
+      > .mc-native-select-control:is(:hover, :focus):not(:disabled)
+    )
+    .mc-select-trigger {
+    --mc-image: var(--mc-highlighted-image);
+    --mc-piece-0: var(--mc-highlighted-0);
+    --mc-piece-1: var(--mc-highlighted-1);
+    --mc-piece-2: var(--mc-highlighted-2);
+    --mc-piece-3: var(--mc-highlighted-3);
+    --mc-piece-4: var(--mc-highlighted-4);
+    --mc-piece-5: var(--mc-highlighted-5);
+    --mc-piece-6: var(--mc-highlighted-6);
+    --mc-piece-7: var(--mc-highlighted-7);
+    --mc-piece-8: var(--mc-highlighted-8);
+  }
+  .mc-native-select-multiple > .mc-native-select-control {
+    opacity: 1;
+    height: calc(48*var(--mc-pixel));
+    padding: calc(2*var(--mc-pixel));
+    background: #000;
+    color: #fff;
+    border: calc(1*var(--mc-pixel)) solid #a0a0a0;
+    cursor: default;
+  }
+  .mc-native-select-multiple > .mc-native-select-control:focus {
+    border-color: white;
+  }
+  .mc-native-select-multiple > .mc-native-select-control:disabled {
+    color: #a0a0a0;
+  }
+  .mc-native-select-option,
+  .mc-native-select-optgroup {
+    background: #202020;
+    color: white;
+    font: inherit;
+  }
+}

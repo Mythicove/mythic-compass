@@ -8,7 +8,6 @@ import { useCanvasPaintConnection } from "./minecraft-render";
 import { getUnihexGlyph, loadUnihex, paintUnihex } from "./minecraft-unifont";
 import type { UnihexGlyph } from "./minecraft-unifont";
 import {
-  positionUnihex,
   disposeUnihex,
   setUnihexAtlas,
 } from "./minecraft-unifont-gpu";
@@ -181,7 +180,6 @@ export const MinecraftUnicodeLabel = ({
           context.canvas.width = Math.max(1, logicalWidth * scale);
           context.canvas.height = 9 * scale;
           context.imageSmoothingEnabled = false;
-          positionUnihex(context, bounds);
 
           for (const shadow of [true, false]) {
             let x = 0;

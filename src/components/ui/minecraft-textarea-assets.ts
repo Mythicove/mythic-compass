@@ -1,0 +1,1 @@
+export const minecraftTextareaAssets = {"scroller":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAgCAAAAAAUUla/AAAAEklEQVR42mM4AAINDMOPagADAJNVhsGfiqMbAAAAAElFTkSuQmCC","scroller_background":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAYAAAAgAQAAAAAZQjTOAAAAC0lEQVR42mOgEAAAAEAAAc8b6QEAAAAASUVORK5CYII="} as const
