@@ -43,7 +43,7 @@
 - [x] 五页深/浅色、中文/英文、宽/窄窗口视觉检查。
 - [x] 表单输入、选择、checkbox、导航、禁用状态与 Windows 原生启动器回归（具体范围见下）。
 
-## 最终验收（2026-11-23）
+## 首轮验收（2026-11-23）
 
 | 检查 | 结果与范围 |
 | --- | --- |
@@ -69,4 +69,59 @@
 
 本次 Vite 输出约为 CSS 1645.77 kB（gzip 528.21 kB）、主 JavaScript 1127.01 kB（gzip 296.61 kB）、延迟加载 Unicode 数据 2079.76 kB（gzip 1509.02 kB）。大包告警仍存在；离线贴图、声音和 Unicode 数据均计入该成本。
 
-矩阵主要覆盖空数据页面；真实实例创建与设置保存另有交互验收。浏览器业务场景使用外部 Tauri transport fixture，Windows 原生场景使用真实后端。本轮未全量重测在线游戏进服、Hoard 安装、签名升级，也未进行 macOS/Linux 原生运行或 Apple 公证验收。前一轮在线游戏证据不计作本轮重新验证。当前构建未创建新发行版本。
+首轮矩阵主要覆盖空数据页面；真实实例创建与设置保存另有交互验收。浏览器业务场景使用外部 Tauri transport fixture，Windows 原生场景使用真实后端。首轮未全量重测在线游戏进服、Hoard 安装、签名升级，也未进行 macOS/Linux 原生运行或 Apple 公证验收；后续验收见下。
+
+## 正式草稿包与业务验收（2026-11-23）
+
+`dev-69` 草稿对应 `cc8b970`，由 CI `45153753346` 打包。下载的 NSIS、MSI、deb、
+AppImage 均按草稿附带 SHA256SUMS 核对：分别为 5,718,420、7,327,744、
+7,846,268、91,097,592 字节。Windows 原生业务使用 MSI 行政解包后的正式 exe，
+隔离便携目录运行。CI 的 Windows 安装验收另覆盖实际安装、窗口、快捷方式、
+mrpack 关联、卸载及关联恢复。
+
+| 检查 | 结果与证据范围 |
+| --- | --- |
+| Chromium / WebKit | 两个浏览器各 2 passed；页面矩阵及启动、失败重试、停止场景使用外部 transport fixture。Web 类型检查通过。 |
+| Windows 原生业务 | 最终重跑 `Q:\FullStack\Mythicove\.acceptance-temp\compass-native-Owo0ix\scenario-result.json`：40 项矩阵、中文实例设置、本地 JAR 原生导入、metadata、启停、依赖体检、删除、实例复制、原生 ZIP 导出及确认后导入通过；确认页提交前实例数量不变，导入后的 JAR 字节也与来源一致。 |
+| 生产 Hoard 服务 | 独立内存 store 的生产服务实际上传、搜索、版本安装；下载字节与上传的 fixture JAR 一致。 |
+| 真实发布与核心进服 | 最终核心验收通过，耗时 321.32s；真实 Isles mrpack、官方 Java 21、MC 1.21.1 / Fabric 0.16.14、online-mode 进服、Mirror UUID 与签名皮肤核对、令牌恢复和失效均通过。 |
+| Windows 桌面玩家业务 | 最终 `isles-compass-pack-07HaZ0/desktop-result.json` 全部通过：空缓存确认安装、主密码拒绝与独立密码登录、账号重启恢复、两次真实进服、内容启停、真实日志过滤与复制、复制实例后 loader 改版及卸载、登出；退出清理完成，入口输出最终汇总，错误日志为空。 |
+| Linux 原生包 | dev-69 deb 在 WSL Ubuntu 26.04 / WebKitGTK 2.52.6、Xvfb 软件渲染下显示真实窗口；1200×800，窗口就绪约 1770ms。截图 `D:\Temp\opencode\compass-linux-8h7vxy4a\native-window.png` 已复查。 |
+| macOS 原生包 | 新增所属进程窗口验收，提交 `b03bb8a`。CI `45185707646` 三平台全部通过并生成 dev-71 草稿；macOS 实际 `.app` 窗口与截图通过，标题 Mythic Compass，1024×674，窗口就绪 3146ms。`macos-native-acceptance` artifact 已下载并复查 GrassCN 首页。 |
+
+### 运行与资源成本
+
+dev-69 的 Windows 原生最终成功场景测得：冷启动至驱动确认就绪 4742ms，暖页面重载
+699ms，首个 navigation 完成约 556ms。此前成功场景分别为 4840ms、613ms、529ms。
+冷启动包含进程启动、CDP 发现及 UI 等待；
+暖重载保留同一进程，不能解释成暖进程启动，也不是多样本性能基准。
+
+实际 WebView2 加载的主 JS、CSS、Unicode 数据 decodedBodySize 分别为
+1,127,018、1,645,778、2,079,768 字节；最终场景资源加载耗时约 70、94、69ms。
+业务与矩阵结束时 renderer JS heap used 为 16,876,596 字节（约 16.09 MiB），
+total 为 20,463,616 字节（约 19.52 MiB），不是完整进程 RSS。
+本轮记录成本基线；Vite 大包告警与离线 Unicode / 贴图 / 声音成本仍然存在。
+
+最终验收 exe SHA-256：`b45eac4a1b862f100b922ad2554abc80c42bfde39935a91601e3a991a6d14304`。
+D: 临时盘容量耗尽后，后续运行的 TEMP、TMP、GOTMPDIR 和 Go cache 改到
+工作区隔离的 `.acceptance-temp`；旧截图和结果保留，删除已失败的局部复制目录
+及三个旧场景的下载缓存后，D: 恢复约 60 GiB 可用空间。
+
+最终完整链路证据：`Q:\FullStack\Mythicove\.acceptance-temp\isles-compass-pack-07HaZ0\`，
+其中 `desktop-dPZCtp` 保留两次游戏窗口、签入/登出、真实内容与日志、loader
+卸载后的截图，`desktop-result.json` 记录业务断言与正式 exe SHA-256。
+入口日志为 `D:\Temp\opencode\compass-full-live-12.{out,err}.log`。
+这轮运行期间用 SetThreadExecutionState 保持测试显示器与系统唤醒，结束后恢复；
+没有修改系统电源方案。测试辅助 PowerShell 隐藏控制台窗口，避免干扰游戏焦点。
+
+### 平台与签名边界
+
+退出清理已改为异步执行 taskkill 并等待所属子进程的实际退出，避免同步命令阻塞
+Node exit 回调导致状态滞后；服务端清理放入 finally。过程中曾出现磁盘耗尽、
+Windows 系统资源不足、一次 WebView 页面与截图超时，以及游戏前台焦点获取失败。
+失败证据保留，不能计作成功；最终在空间充足、显示器唤醒且辅助控制台隐藏的条件下
+重新完成整条链路。单次 WebView 超时的独立根因未确定，最终通过不构成其因果证明。
+
+Linux 和 macOS 原生包证据覆盖启动与窗口，尚未完成完整玩家链路及五页交互矩阵。
+仓库未配置 updater 签名密钥及 Apple 签名 / 公证 secrets，签名升级和公证待提供
+对应凭据后验证。dev-69、dev-71 均保持草稿，没有公开发行。
