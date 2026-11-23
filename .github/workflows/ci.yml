@@ -320,6 +320,21 @@ jobs:
         shell: pwsh
         run: ./src-tauri/tests/windows-installer.ps1
 
+      - name: verify native macOS package window
+        if: matrix.platform == 'macos-latest'
+        timeout-minutes: 3
+        run: swift src-tauri/tests/macos-desktop.swift "src-tauri/target/release/bundle/macos/Mythic Compass.app" "$RUNNER_TEMP/compass-macos-native"
+
+      - uses: actions/upload-artifact@v4
+        if: always() && matrix.platform == 'macos-latest'
+        with:
+          name: macos-native-acceptance
+          path: |
+            ${{ runner.temp }}/compass-macos-native/result.json
+            ${{ runner.temp }}/compass-macos-native/native.log
+            ${{ runner.temp }}/compass-macos-native/native-window.png
+          if-no-files-found: error
+
       - uses: actions/upload-artifact@v4
         if: always() && matrix.platform == 'windows-latest'
         with:
