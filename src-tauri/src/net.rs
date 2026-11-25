@@ -383,17 +383,23 @@ impl Downloader {
             .map(|m| m.len())
             .unwrap_or(0);
         let mut req = self.http.get(url);
-        let mut resume_from = 0u64;
         if have > 0 && (task.size == 0 || have < task.size) {
             req = req.header("Range", format!("bytes={have}-"));
-            resume_from = have;
         }
         let res = req.send().await?;
         let (written_start, append) = match res.status().as_u16() {
             206 => (have, true),
             200 => (0, false),
-            // 416 = Range 超出范围：文件其实已经完整，交给校验判定
-            416 if have > 0 => return Ok(0),
+            // A range rejection is not proof of completeness. Only independently
+            // supplied size/hash can certify the existing bytes in verify().
+            416 if have > 0 && (task.size > 0 || !task.sha1.is_empty()) => return Ok(0),
+            416 if have > 0 => {
+                let stale = part.to_owned();
+                artifact_io(lock, move || std::fs::remove_file(stale)).await?;
+                return Err(Error::Config(
+                    "unverified partial rejected; restarting download".into(),
+                ));
+            }
             other => {
                 let body = res.text().await.unwrap_or_default();
                 return Err(Error::Api {
@@ -406,7 +412,7 @@ impl Downloader {
         let total = if task.size > 0 {
             task.size
         } else {
-            resume_from + res.content_length().unwrap_or(0)
+            written_start + res.content_length().unwrap_or(0)
         };
 
         let path = part.to_owned();
@@ -439,8 +445,7 @@ impl Downloader {
             }
         }
         artifact_io(lock, move || file.flush()).await?;
-        // 本次实际传输的字节：从 written_start 起算。服务端对 Range 回 200（不支持续传）
-        // 时 written_start=0 而 resume_from=have，减 resume_from 会下溢。
+        // Count only bytes transferred by this response, even when Range was ignored.
         Ok(written - written_start)
     }
 

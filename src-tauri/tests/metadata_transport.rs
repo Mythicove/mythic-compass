@@ -160,6 +160,141 @@ impl Drop for Server {
     }
 }
 
+#[tokio::test]
+async fn unknown_size_restart_reports_the_full_response_not_the_old_partial() {
+    let body = include_bytes!("fixtures/1.21.4.json");
+    let server = Server::start(vec![response(200, std::str::from_utf8(body).unwrap())]).await;
+    let directory = tempfile::tempdir().unwrap();
+    let task = FileTask {
+        url: server.url.clone(),
+        dest: directory.path().join("version.json"),
+        sha1: hex::encode(Sha1::digest(body)),
+        size: 0,
+    };
+    tokio::fs::write(task.part_path(), &body[..128])
+        .await
+        .unwrap();
+    let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+    let summary = Downloader::new(http_client().unwrap(), 1, "", &Paths::new(directory.path()))
+        .download_all(vec![task.clone()], Some(tx))
+        .await;
+    assert!(summary.failed.is_empty(), "{:?}", summary.failed);
+    assert_eq!(tokio::fs::read(task.dest).await.unwrap(), body);
+    let mut last = None;
+    while let Ok(progress) = rx.try_recv() {
+        assert_eq!(progress.total_bytes, body.len() as u64);
+        last = Some(progress.done_bytes);
+    }
+    assert_eq!(last, Some(body.len() as u64));
+}
+
+#[tokio::test]
+async fn range_rejection_does_not_certify_an_unverified_partial() {
+    let body = include_str!("fixtures/1.21.4.json");
+    let server = Server::start(vec![response(416, ""), response(200, body)]).await;
+    let directory = tempfile::tempdir().unwrap();
+    let task = FileTask {
+        url: server.url.clone(),
+        dest: directory.path().join("version.json"),
+        sha1: String::new(),
+        size: 0,
+    };
+    tokio::fs::write(task.part_path(), &body.as_bytes()[..128])
+        .await
+        .unwrap();
+    let summary = Downloader::new(http_client().unwrap(), 1, "", &Paths::new(directory.path()))
+        .download_all(vec![task.clone()], None)
+        .await;
+    assert!(summary.failed.is_empty(), "{:?}", summary.failed);
+    assert_eq!(tokio::fs::read(&task.dest).await.unwrap(), body.as_bytes());
+    assert_eq!(server.count(), 2);
+    assert!(!task.part_path().exists());
+}
+
+#[tokio::test]
+async fn interrupted_body_resumes_without_promoting_partial_bytes() {
+    let body = include_str!("fixtures/1.21.4.json");
+    let offset = 128;
+    let server = Server::start(vec![
+        format!(
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len(), &body[..offset]
+        ),
+        format!(
+            "HTTP/1.1 206 Partial Content\r\nContent-Range: bytes {offset}-{}/{}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+            body.len() - 1, body.len(), body.len() - offset, &body[offset..]
+        ),
+    ]).await;
+    let directory = tempfile::tempdir().unwrap();
+    let task = FileTask {
+        url: server.url.clone(),
+        dest: directory.path().join("version.json"),
+        sha1: hex::encode(Sha1::digest(body.as_bytes())),
+        size: body.len() as u64,
+    };
+    let summary = Downloader::new(http_client().unwrap(), 1, "", &Paths::new(directory.path()))
+        .download_all(vec![task.clone()], None)
+        .await;
+    assert!(summary.failed.is_empty(), "{:?}", summary.failed);
+    assert_eq!(tokio::fs::read(&task.dest).await.unwrap(), body.as_bytes());
+    assert_eq!(server.count(), 2);
+    assert!(!task.part_path().exists());
+}
+
+#[tokio::test]
+async fn unavailable_origin_keeps_partial_and_later_install_recovers() {
+    let body = include_str!("fixtures/1.21.4.json");
+    let server = Server::start(vec![response(503, "offline")]).await;
+    let directory = tempfile::tempdir().unwrap();
+    let mut task = FileTask {
+        url: server.url.clone(),
+        dest: directory.path().join("version.json"),
+        sha1: hex::encode(Sha1::digest(body.as_bytes())),
+        size: body.len() as u64,
+    };
+    tokio::fs::write(task.part_path(), &body.as_bytes()[..128])
+        .await
+        .unwrap();
+    let paths = Paths::new(directory.path());
+    let downloader = Downloader::new(http_client().unwrap(), 1, "", &paths);
+    let failed = downloader.download_all(vec![task.clone()], None).await;
+    assert_eq!(failed.failed.len(), 1);
+    assert!(!task.dest.exists());
+    assert_eq!(
+        tokio::fs::read(task.part_path()).await.unwrap(),
+        &body.as_bytes()[..128]
+    );
+    let recovered = Server::start(vec![response(200, body)]).await;
+    task.url = recovered.url.clone();
+    let result = downloader.download_all(vec![task.clone()], None).await;
+    assert!(result.failed.is_empty(), "{:?}", result.failed);
+    assert_eq!(tokio::fs::read(&task.dest).await.unwrap(), body.as_bytes());
+    assert!(!task.part_path().exists());
+}
+
+#[tokio::test]
+async fn blocked_destination_reports_failure_and_recovers_after_unblocking() {
+    let body = include_str!("fixtures/1.21.4.json");
+    let server = Server::start(vec![response(200, body)]).await;
+    let directory = tempfile::tempdir().unwrap();
+    let task = FileTask {
+        url: server.url.clone(),
+        dest: directory.path().join("version.json"),
+        sha1: hex::encode(Sha1::digest(body.as_bytes())),
+        size: body.len() as u64,
+    };
+    tokio::fs::create_dir(&task.dest).await.unwrap();
+    let downloader = Downloader::new(http_client().unwrap(), 1, "", &Paths::new(directory.path()));
+    let failed = downloader.download_all(vec![task.clone()], None).await;
+    assert_eq!(failed.failed.len(), 1);
+    assert!(task.dest.is_dir());
+    tokio::fs::remove_dir(&task.dest).await.unwrap();
+    let recovered = downloader.download_all(vec![task.clone()], None).await;
+    assert!(recovered.failed.is_empty(), "{:?}", recovered.failed);
+    assert_eq!(tokio::fs::read(&task.dest).await.unwrap(), body.as_bytes());
+    assert!(!task.part_path().exists());
+}
+
 fn response(status: u16, body: &str) -> String {
     format!(
         "HTTP/1.1 {status} Status\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
