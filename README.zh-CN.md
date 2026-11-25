@@ -8,18 +8,18 @@ Mythicove 生态的 Minecraft 启动器（Tauri 2 + React 前端，Rust 核心�
 
 开发按阶段计划推进：[Compass 启动器开发计划](https://docs.gov.skin/plans/compass-launcher/)（P0 → P6，目标是三平台上达到 HMCL/PCL 级能力）；进度见[当前进度页](https://docs.gov.skin/plans/status/)。
 
-**原生启动已在 P1 全链路接通。** Rust 核心用真实版本数据做了契约测试，围绕它的命令层与 UI 接线（建实例 → 安装 → 启动 → 实时日志）也已就位。按计划剩余：自动更新（**P5**）与 CI 的三平台签名打包发布（**P6**）。
+原生启动、实例与内容管理、加载器与整合包、多账号、诊断及官方 Java 下载均已实现。Windows 正式草稿包已完成两次认证进服；Linux 已有五页原生矩阵与离线账号交互；macOS 已有打包后原生窗口验收。签名更新与 Apple 公证仍需发布凭据。见[验收证据](./UI-REMEDIATION.md)和[使用、恢复与发布说明](./OPERATIONS.md)。
 
 已实现：
 
 - **P0 —— 骨架与仓库卫生**
   - **所有后端 HTTP 都在 Rust 核心里**（`src-tauri/src/api.rs`）。webview 完全不碰网络，于是桌面端既不依赖 Mirror 的 CORS 配置，CSP 也不需要放行任何远端 `connect-src`/`img-src`——皮肤由 Rust 取回后以 `data:` URL 交给前端。
   - **只有具名命令。** 原先的 `launch(program, args)`（任意命令执行）与 `download_file(url, dest)`（任意 URL 写任意路径）已删除，也不提供通用转发命令。
-  - **令牌不进 webview**：命令返回的是不含令牌的账号视图；`accounts.json` 留在数据目录（P4 迁到系统钥匙串）。
+  - **令牌不进 webview**：命令返回不含令牌的账号视图；`accounts.json` 保存身份信息，`secrets.json` 分开保存令牌，系统钥匙串存储尚待实现。
   - 登录用**玩家名 + 该玩家的启动器独立密码**（[ADR-0012](https://docs.gov.skin/architecture/adr-0012-credential-separation/)），不是网站主密码。
   - 持久化设置（`compass.json`，带输入收敛与原子写）、明确的数据目录布局（资源/库/版本全局共享，实例互相隔离）、深浅色与跟随系统主题、中英双语界面。
   - 三平台 CI（`cargo fmt --check`、`clippy -D warnings`、`cargo test`、typecheck、前端构建）+ 按需打包成 draft release。
-- **P1（进行中）—— 原生启动的核心，全在 Rust，且对着真实数据做契约测试**
+- **原生启动核心 —— 全在 Rust，对着真实数据做契约测试**
   - `version.rs`：版本 JSON 解析、平台规则求值（`os.name`/`os.arch`/`os.version` 正则/`features`，最后一条命中的规则决定）、Maven 坐标 → 路径、库解析（老式 `natives`+`extract` 与现代 4 段坐标走 classpath 两种形态）、`arguments`（1.13+）与 `minecraftArguments`（≤1.12）两套启动参数构造、版本继承合并。
   - `net.rs`：唯一的下载实现——并发、退避重试、sha1 与大小双校验、`Range` 断点续传、按主机映射的镜像改写（BMCLAPI 兼容）并在镜像失败时回退官方源、校验通过才把 `.part` 落成正式文件。
   - `assets.rs` / `meta.rs` / `install.rs`：内容寻址的资源对象（按 hash 去重）、1.8 之前的 `virtual/` 布局、版本清单与继承链解析、幂等安装（全部落进共享缓存）。
@@ -27,7 +27,7 @@ Mythicove 生态的 Minecraft 启动器（Tauri 2 + React 前端，Rust 核心�
   - `launch.rs`：JVM 参数 → 主类 → 游戏参数；1.7–1.18.1 的 Log4Shell 缓解；那个**不在** `arguments.jvm` 里的 `logging.client.argument`；老版本 macOS 的 `-XstartOnFirstThread`；带 zip-slip 防护的 natives 解压；同时读 stdout 与 stderr 的日志转发。
   - `instance.rs`：每实例一个 `instance.json` + 独立 `.minecraft`，slug 校验挡住路径穿越。
 
-尚未实现（按阶段）：实例与 mod/资源包管理（**P2**）、mod loader 与整合包（**P3**）、多账号与钥匙串存储（**P4**）、崩溃诊断、Java 自动下载与自动更新（**P5**）、三平台签名打包与发布（**P6**）。
+尚待完成：系统钥匙串存储、凭据配置后的签名更新与公证验收，以及 Linux/macOS 完整在线桌面业务。更新 UI 与条件签名构建配置已存在；未配 updater 密钥的构建明确显示未配置更新。
 
 原先"把 `.mrpack` 交给 Prism Launcher"的路径是**直接删掉**而不是与新路径并存——只留一条启动路径。
 
@@ -46,7 +46,7 @@ pnpm tauri build    # 打包
 
 ```bash
 cd src-tauri
-cargo test                                   # 94 个单元/契约测试，离线可跑
+cargo test                                   # 本地单元、契约与 HTTP transport 测试
 cargo test --test install_smoke -- --ignored # 真下载约 550MB 装一个 1.21.4（需联网）
 ```
 
@@ -74,7 +74,7 @@ src-tauri/src/
 src/
   i18n/         中英两份文案表
   lib/ipc.ts    与 Rust 命令一一对应的类型化封装
-  views/        首页 / 实例 / 模组 / 设置
+   views/        首页 / 实例 / 内容 / 日志 / 设置
 ```
 
 ## 许可证

@@ -8,18 +8,18 @@ Minecraft launcher for the Mythicove ecosystem (Tauri 2 + React frontend, Rust c
 
 Development follows a phased plan — [Compass launcher development plan](https://docs.gov.skin/plans/compass-launcher/) (P0 → P6, targeting HMCL/PCL-class capability on Windows, macOS and Linux). Progress is tracked on the [status page](https://docs.gov.skin/plans/status/).
 
-**Native launch is wired end-to-end (P1).** The Rust core is tested against real version data, and the command/UI chain around it (create instance → install → launch → live logs) is in place. Remaining per plan: auto-update (**P5**) and signed three-platform packaging/release in CI (**P6**).
+Native launch, instance/content management, mod loaders, modpacks, multiple accounts, diagnostics and official Java downloads are implemented. Windows packaged acceptance includes two authenticated online launches; Linux has a native five-page matrix and offline-account interaction; macOS has packaged native-window acceptance. Signed updates and Apple notarization require release credentials. See [acceptance evidence](./UI-REMEDIATION.md) and [usage, recovery and release operations](./OPERATIONS.md) (Chinese).
 
 Implemented so far:
 
 - **P0 — skeleton and repo hygiene**
   - All backend HTTP lives in the Rust core (`src-tauri/src/api.rs`). The webview never touches the network, so the app does not depend on Mirror's CORS configuration and the CSP allows no remote `connect-src`/`img-src` — skins are fetched in Rust and handed to the frontend as `data:` URLs.
   - Named commands only. The previous `launch(program, args)` (arbitrary command execution) and `download_file(url, dest)` (arbitrary URL to arbitrary path) are gone; there is no generic proxy command either.
-  - Tokens never reach the webview: commands return a token-free account view; `accounts.json` stays in the app data directory (moves to the OS keychain in P4).
+  - Tokens never reach the webview: commands return a token-free account view. `accounts.json` holds identities, while `secrets.json` stores tokens separately; OS keychain storage remains pending.
   - Sign-in uses a **player name plus that player's launcher password** ([ADR-0012](https://docs.gov.skin/architecture/adr-0012-credential-separation/)) — not the site master password.
   - Persistent settings (`compass.json`) with sanitizing and atomic writes, a documented data-directory layout (assets/libraries/versions shared globally, instances isolated), light/dark/system theme, zh-CN/en interface.
   - CI on three platforms (`cargo fmt --check`, `clippy -D warnings`, `cargo test`, typecheck, frontend build) plus on-demand packaging into draft releases.
-- **P1 (in progress) — the native-launch core, all in Rust with contract tests against real data**
+- **Native-launch core — Rust with contract tests against real data**
   - `version.rs`: version-JSON parsing, platform rule evaluation (`os.name`/`os.arch`/`os.version` regex/`features`, last matching rule wins), Maven coordinate → path, library resolution (legacy `natives`+`extract` vs. modern 4-part coordinates that ride the classpath), launch-argument construction for both `arguments` (1.13+) and `minecraftArguments` (≤1.12), and version inheritance merging.
   - `net.rs`: the single download implementation — concurrency, retries with backoff, sha1 + size verification, `Range` resume, per-host mirror mapping (BMCLAPI-compatible) with fallback to the official source, `.part` files renamed into place only after verification.
   - `assets.rs` / `meta.rs` / `install.rs`: content-addressed asset objects (deduplicated by hash), the `virtual/` layout for pre-1.8, version manifest and inheritance resolution, and an idempotent install that lands everything in the shared cache.
@@ -27,7 +27,7 @@ Implemented so far:
   - `launch.rs`: JVM args → main class → game args, Log4Shell mitigation for 1.7–1.18.1, the `logging.client.argument` that is *not* part of `arguments.jvm`, macOS `-XstartOnFirstThread` for legacy versions, natives extraction with zip-slip protection, and log pumping that reads both streams.
   - `instance.rs`: one `instance.json` per instance plus an isolated `.minecraft`, slug validation that blocks traversal.
 
-Not yet implemented, by phase: instances and mod/resourcepack management (**P2**), mod loaders and modpacks (**P3**), multi-account and keychain storage (**P4**), crash diagnostics, Java auto-download and self-update (**P5**), signed three-platform packaging and release (**P6**).
+Remaining: OS keychain storage, credential-backed signed-update/notarization acceptance, and complete online desktop workflows on Linux/macOS. Update UI and conditional signing configuration exist; builds without updater keys report updates as unconfigured.
 
 The former "hand the `.mrpack` to Prism Launcher" path was deleted rather than kept next to the new one — one launch path, not two.
 
@@ -46,7 +46,7 @@ Server addresses default to `http://localhost:8080` and are editable under Setti
 
 ```bash
 cd src-tauri
-cargo test                                   # 94 unit/contract tests, offline
+cargo test                                   # local unit/contract/transport tests
 cargo test --test install_smoke -- --ignored # real ~550MB install of 1.21.4 (network)
 ```
 
@@ -74,7 +74,7 @@ src-tauri/src/
 src/
   i18n/         zh-CN + en message tables
   lib/ipc.ts    typed invoke wrappers matching the Rust commands
-  views/        home / instances / mods / settings
+   views/        home / instances / content / logs / settings
 ```
 
 ## License
