@@ -57,7 +57,8 @@ cargo test --locked --test metadata_transport
 覆盖取消后锁释放、共享写入、截断响应恢复、不可用源重试与恢复、416 拒绝和未知大小进度。
 HTTP 服务位于测试边界，文件下载与校验走生产 Downloader。
 
-Linux 原生矩阵需要 python3-pyatspi、X11/XTest、GTK/WebKit、dbus 和 Xvfb：
+Linux 原生矩阵需要 python3-pyatspi、X11/XTest、GTK/WebKit、dbus、Xvfb，
+以及中文正文所需的系统 CJK 字体（例如 fonts-noto-cjk）：
 
 ```sh
 dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' \

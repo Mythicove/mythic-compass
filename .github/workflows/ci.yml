@@ -329,7 +329,7 @@ jobs:
         if: matrix.platform == 'ubuntu-latest'
         timeout-minutes: 5
         run: |
-          sudo apt-get install -y python3-pyatspi dbus-x11 xvfb xauth libxtst6
+          sudo apt-get install -y python3-pyatspi dbus-x11 xvfb xauth libxtst6 fonts-noto-cjk
           dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' \
             python3 src-tauri/tests/linux-desktop.py "$PWD/src-tauri/target/release/compass" "$RUNNER_TEMP/compass-linux-native"
 
