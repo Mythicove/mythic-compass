@@ -32,7 +32,7 @@ jobs:
             target: aarch64-apple-darwin
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # Tauri 在 Linux 上编译时需要 WebKitGTK 与相关开发包（reqwest 用 rustls，故不需要 OpenSSL）
       - name: install linux dependencies
@@ -52,9 +52,9 @@ jobs:
           workspaces: src-tauri
 
       # 版本取自 package.json 的 packageManager 字段（单一来源）
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -96,7 +96,7 @@ jobs:
           - platform: macos-latest
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: install linux dependencies
         if: matrix.platform == 'ubuntu-latest'
@@ -119,7 +119,7 @@ jobs:
         run: cargo test --test java_live -- --ignored --nocapture downloads_modern_java_and_repairs_its_installation
 
       - name: retain official Java acceptance
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: java-acceptance-${{ matrix.platform }}
           path: ${{ runner.temp }}/compass-java-live/java-runtime-delta-acceptance.json
@@ -128,7 +128,7 @@ jobs:
       # NeoForge 的 processor pipeline 要用 Java 跑（installertools / jarsplitter /
       # AutoRenamingTool / binarypatcher），1.21.4 这一代要 Java 21。
       # 固定装上，不依赖 runner 预装的是哪个版本。
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: 21
@@ -223,7 +223,7 @@ jobs:
             args: ""
     runs-on: ${{ matrix.platform }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       - name: install linux dependencies
         if: matrix.platform == 'ubuntu-latest'
@@ -237,8 +237,8 @@ jobs:
         with:
           workspaces: src-tauri
       # 版本取自 package.json 的 packageManager 字段（单一来源）
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
@@ -325,7 +325,25 @@ jobs:
         timeout-minutes: 3
         run: swift src-tauri/tests/macos-desktop.swift "src-tauri/target/release/bundle/macos/Mythic Compass.app" "$RUNNER_TEMP/compass-macos-native"
 
-      - uses: actions/upload-artifact@v4
+      - name: verify native Linux pages and offline account
+        if: matrix.platform == 'ubuntu-latest'
+        timeout-minutes: 5
+        run: |
+          sudo apt-get install -y python3-pyatspi dbus-x11 xvfb xauth libxtst6
+          dbus-run-session -- xvfb-run -a -s '-screen 0 1280x900x24' \
+            python3 src-tauri/tests/linux-desktop.py "$PWD/src-tauri/target/release/compass" "$RUNNER_TEMP/compass-linux-native"
+
+      - uses: actions/upload-artifact@v7
+        if: always() && matrix.platform == 'ubuntu-latest'
+        with:
+          name: linux-native-acceptance
+          path: |
+            ${{ runner.temp }}/compass-linux-native/result.json
+            ${{ runner.temp }}/compass-linux-native/*.log
+            ${{ runner.temp }}/compass-linux-native/*.png
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v7
         if: always() && matrix.platform == 'macos-latest'
         with:
           name: macos-native-acceptance
@@ -335,7 +353,7 @@ jobs:
             ${{ runner.temp }}/compass-macos-native/native-window.png
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always() && matrix.platform == 'windows-latest'
         with:
           name: windows-installer-acceptance
